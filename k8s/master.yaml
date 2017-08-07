@@ -1,0 +1,87 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: aidbox-green-data
+  labels:
+    app: aidbox
+  annotations:
+    volume.beta.kubernetes.io/storage-class: standard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aidbox-green
+  labels:
+    app: aidbox
+spec:
+  terminationGracePeriodSeconds: 10
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app
+              operator: In
+              values:
+              - aidbox
+          topologyKey: kubernetes.io/hostname
+  volumes:
+  - name: aidbox-green-data
+    persistentVolumeClaim:
+      claimName: aidbox-green-data
+  containers:
+  - name: pg
+    image: aidbox/aidboxdb:0.0.1-alpha6
+    ports:
+    - containerPort: 5432
+      name: pg
+    env:
+    - name: PGUSER
+      value: postgres
+    - name: POSTGRES_DB
+      value: aidbox 
+    - name: POSTGRES_PASSWORD
+      value: postgres
+    - name: PG_ROLE
+      value: master
+    livenessProbe:
+      exec:
+        command:
+        - psql
+        - -c
+        - select 1
+      initialDelaySeconds: 5
+      periodSeconds: 5
+    volumeMounts:
+    - name: aidbox-green-data
+      mountPath: /data
+      subPath: pgdata
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: aidbox
+spec:
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+---
+kind: Endpoints
+apiVersion: v1
+metadata:
+  name: aidbox
+subsets:
+  - addresses:
+      - ip: 10.16.1.137
+    ports:
+      - port: 5432
