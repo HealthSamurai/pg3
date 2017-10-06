@@ -64,7 +64,8 @@
                 "/" (:apiVersion cfg)
                 (when (:ns cfg) (str "/namespaces/" (:ns cfg)))
                 (str "/" (or (:plural cfg) (str (str/lower-case (:kind cfg)) "s")))
-                (when (seq? parts) (str/join "/" parts)))))
+                (when (seq? parts)
+                  (str "/" (str/join "/" parts))))))
 
 (resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1"})
 (resource-url {:kind "PersistentVolumeClaim" :apiVersion "apiextensions.k8s.io/v1beta1"})
@@ -74,6 +75,7 @@
 
 
 (defn query [cfg & pth]
+  (println  (apply resource-url cfg pth))
   (let [res @(http-client/get
               (apply resource-url cfg pth)
               {:headers (merge default-headers {"Content-Type" "application/json"})
@@ -87,7 +89,8 @@
 
 (defn list [cfg] (query cfg))
 
-(defn find [cfg] (query cfg (or (:id cfg) (get-in cfg [:metadata :name]))))
+(defn find [cfg]
+  (query cfg (or (:id cfg) (get-in cfg [:metadata :name]))))
 
 (defn create [res]
   (let [u (resource-url res)]
@@ -108,10 +111,10 @@
       :body
       (json/parse-string)))
 
-(defn patch [res]
-  (let [res (find res)]
-    (if-not (= "Failure" (get res "status"))
-      (let [diff (patch/diff res (merge res (walk/stringify-keys patch)))]
+(defn patch [nres]
+  (let [res (find nres)]
+    (if-not (or (number? res) (= "Failure" (get res "status")))
+      (let [diff (patch/diff res (merge res (walk/stringify-keys nres)))]
         (->
          @(http-client/patch
            (str (resource-url res (get-in res [:metadata :name])))

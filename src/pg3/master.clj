@@ -38,6 +38,7 @@
    :xlog-size "1Gi"
    :annotations {"volume.beta.kubernetes.io/storage-class" "standard"}})
 
+
 (defmethod u/*fn ::create-pvc
   [{spec :spec}]
   (let [cfg      {:prefix "api" :apiVersion "v1" :ns "default"}
@@ -51,8 +52,15 @@
   (let [cfg      {:prefix "api" :apiVersion "v1" :ns "default"}
         vols     (volume-claims spec)
         pvc-data (k8s/delete  (first vols))
-        pvc-xlog (k8s/delete (second vols))]
-    ))
+        pvc-xlog (k8s/delete (second vols))]))
+
+(def state-machine
+  {[:tick :init :creating-vpc] {:probe :vpc-created
+                                :to :init-cluster}})
+
+(defn reconcile [ev pg state]
+
+  )
 
 (comment
   (k8s/query {:prefix "api"

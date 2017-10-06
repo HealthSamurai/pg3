@@ -2,25 +2,28 @@
   (:require [k8s.core :as k8s]
             [unifn.core :as u]))
 
+(def pgd {:apiVersion "apiextensions.k8s.io/v1beta1"
+          :kind "CustomResourceDefinition"
+          :metadata {:name "pgs.health-samurai.io"}
+          :spec {:group "health-samurai.io"
+                 :version "v1"
+                 :scope "Namespaced"
+                 :names {:kind "Pg" :plural "pgs"}}})
+
+(def pgs  {:apiVersion "apiextensions.k8s.io/v1beta1"
+           :kind "CustomResourceDefinition"
+           :metadata {:name "pgstatuses.health-samurai.io"}
+           :spec {:group "health-samurai.io"
+                  :version "v1"
+                  :scope "Namespaced"
+                  :names {:kind "PgStatus" :plural "pgstatuses"}}})
+
 (defn init []
-  (doseq [crd [{:apiVersion "apiextensions.k8s.io/v1beta1"
-                :kind "CustomResourceDefinition"
-                :metadata {:name "pgs.health-samurai.io"}
-                :spec {:group "health-samurai.io"
-                       :version "v1"
-                       :scope "Namespaced"
-                       :names {:kind "Pg" :plural "pgs"}}}
-               {:apiVersion "apiextensions.k8s.io/v1beta1"
-                :kind "CustomResourceDefinition"
-                :metadata {:name "pgss.health-samurai.io"}
-                :spec {:group "health-samurai.io"
-                       :version "v1"
-                       :scope "Namespaced"
-                       :names {:kind "PgStatus" :plural "pgstatuses"}}}]]
+  (doseq [crd [pgd pgs]]
     (k8s/create crd)))
 
-#_(k8s/query {:kind "CustomResourceDefinition"
-            :apiVersion "apiextensions.k8s.io/v1beta1"})
+(k8s/create pgs)
+
 
 
 (def spec
@@ -47,7 +50,21 @@
 (comment
   (k8s/create spec)
 
-  (init)
+  (k8s/query {:kind "PgStatus"
+              :id "cleo"
+              :ns "default"
+              :plural "pgstatuses"
+              :apiVersion "health-samurai.io/v1"} "cleo")
 
-  )
+  (k8s/patch {:kind "PgStatus"
+              :id "cleo"
+               :plural "pgstatuses"
+               :apiVersion "health-samurai.io/v1"
+              :status "init"
+              :phase "creating-vpc"
+              :history [{:tx (java.util.Date.) :status "init"}
+                        {:tx (java.util.Date.) :status "creating-vpc"}]})
+
+  (init)
+)
 
