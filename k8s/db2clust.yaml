@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: db-red-init
+  labels:
+    app: db
+spec:
+  restartPolicy: Never
+  volumes:
+  - name: db-red-data
+    persistentVolumeClaim:
+      claimName: db-red-data
+  - name: db-red-xlog
+    persistentVolumeClaim:
+      claimName: db-red-xlog
+  - name: db-config
+    configMap:
+      name: db-config
+  containers:
+  - name: pg
+    volumeMounts:
+    - name: db-config
+      mountPath: /config/
+    - name: db-red-data
+      mountPath: /data
+      subPath: pgdata
+    - name: db-red-xlog
+      mountPath: /xlog
+      subPath: xlog
+    image: aidbox/aidboxdb:passive
+    command:
+      - "/bin/bash"
+      - "-x"
+      - "-c"
+      - |
+        rm -rf /data/* && \
+        echo 'db:5432:*:postgres:secret' >> ~/.pgpass && \
+        chmod -R 0600 ~/.pgpass && \
+        /pg/bin/psql -h db -U postgres -c "SELECT pg_create_physical_replication_slot('red');" && \
+        /pg/bin/pg_basebackup -D /data -Fp -h db -U postgres -w -R -Xs -c fast -l red -P -v && \
+        echo "primary_slot_name = 'red'" >> /data/recovery.conf && \
+        echo "standby_mode = 'on'" >> /data/recovery.conf && \
+        chown -R postgres /data && \
+        chmod -R 0700 /data
+    # command: ["/bin/bash", "-c", "chown postgres -R /data && chown postgres -R /xlog && chmod 0600 /config/.pgpass && chmod 0700 /data"]

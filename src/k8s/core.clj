@@ -6,7 +6,8 @@
    [clojure.walk :as walk]
    [unifn.core :as u]
    [cheshire.core :as json]
-   [clojure.tools.logging :as log]))
+   [clojure.tools.logging :as log]
+   [clojure.string :as str]))
 
 (def default-headers
   (if-let [token (System/getenv "KUBE_TOKEN")]
@@ -23,8 +24,6 @@
               (url cfg pth)
               {:headers default-headers :insecure? true})]
     (-> res :body)))
-
-(def cfg {:apiVersion "ci3.io/v1" :ns "default"})
 
 (defn base64-decode [s]
   (if s
@@ -59,9 +58,24 @@
   [res]
   (resolve-secrets res))
 
-(defn query [cfg rt & [pth]]
+(defn resource-url [cfg & parts]
+  (url cfg (str (if (re-matches  #"^v[.0-9]+$" (:apiVersion cfg))
+                  "api" "apis")
+                "/" (:apiVersion cfg)
+                (when (:ns cfg) (str "/namespaces/" (:ns cfg)))
+                (str "/" (or (:plural cfg) (str (str/lower-case (:kind cfg)) "s")))
+                (when (seq? parts) (str/join "/" parts)))))
+
+(resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1"})
+(resource-url {:kind "PersistentVolumeClaim" :apiVersion "apiextensions.k8s.io/v1beta1"})
+
+(resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1" :ns "test"})
+(resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1" :ns "test"})
+
+
+(defn query [cfg & pth]
   (let [res @(http-client/get
-              (url cfg (str (or (:prefix cfg) "apis") "/" (:apiVersion cfg) (when (:ns cfg) (str "/namespaces/" (:ns cfg))) "/" (name rt) (when pth (str "/" pth))))
+              (apply resource-url cfg pth)
               {:headers (merge default-headers {"Content-Type" "application/json"})
                :insecure? true})]
     (-> res
@@ -69,34 +83,38 @@
      (json/parse-string keyword)
      (resolve-secrets))))
 
-(defn list [cfg rt] (query cfg rt))
-(defn find [cfg rt id] (query cfg rt id))
+(first (:items (query {:apiVersion "v1" :kind "PersistentVolumeClaim"})))
 
-(defn create [cfg rt res]
-  (println (url cfg (str (or (:prefix cfg) "apis") "/" (:apiVersion cfg) "/namespaces/" (:ns cfg) "/" (name rt))))
-  (-> @(http-client/post
-        (url cfg (str (or (:prefix cfg) "apis") "/" (:apiVersion cfg) "/namespaces/" (:ns cfg) "/" (name rt)))
-        {:body (json/generate-string (walk/stringify-keys res))
-         :insecure? true
-         :headers (merge default-headers {"Content-Type" "application/json"})})
-      :body
-      (json/parse-string)))
+(defn list [cfg] (query cfg))
 
-(defn delete [cfg rt id]
+(defn find [cfg] (query cfg (or (:id cfg) (get-in cfg [:metadata :name]))))
+
+(defn create [res]
+  (let [u (resource-url res)]
+    (println u)
+    (-> @(http-client/post
+          u
+          {:body (json/generate-string (walk/stringify-keys res))
+           :insecure? true
+           :headers (merge default-headers {"Content-Type" "application/json"})})
+        :body
+        (json/parse-string))))
+
+(defn delete [res]
   (-> @(http-client/delete
-        (url cfg (str (or (:prefix cfg) "apis") "/" (:apiVersion cfg) "/namespaces/" (:ns cfg) "/" (name rt) "/" id))
+        (str (resource-url res (get-in res [:metadata :name])))
         {:headers (merge default-headers {"Content-Type" "application/json"})
          :insecure? true})
       :body
       (json/parse-string)))
 
-(defn patch [cfg rt id patch]
-  (let [res (find cfg rt id)]
+(defn patch [res]
+  (let [res (find res)]
     (if-not (= "Failure" (get res "status"))
       (let [diff (patch/diff res (merge res (walk/stringify-keys patch)))]
         (->
          @(http-client/patch
-           (url cfg (str (or (:prefix cfg) "apis") "/" (:apiVersion cfg) "/namespaces/" (:ns cfg) "/" (name rt) "/" id))
+           (str (resource-url res (get-in res [:metadata :name])))
            {:body (json/generate-string diff)
             :insecure? true
             :headers (merge default-headers {"Content-Type" "application/json-patch+json"})})

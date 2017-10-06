@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aidboxdb-init
+  labels:
+    app: db
+spec:
+  restartPolicy: Never
+  volumes:
+  - name: db-green-data
+    persistentVolumeClaim:
+      claimName: db-green-data
+  containers:
+  - name: pg
+    volumeMounts:
+    - name: db-green-data
+      mountPath: /data
+      subPath: pgdata
+    image: aidbox/aidboxdb:passive
+    command: ["/bin/sh", "-c", "chown postgres -R /data && su - postgres -c \"/pg/bin/initdb --data-checksums -E 'UTF-8' --lc-collate='en_US.UTF-8' --lc-ctype='en_US.UTF-8' -D /data\""]
