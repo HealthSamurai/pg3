@@ -45,21 +45,26 @@
         vols     (volume-claims spec)
         pvc-data (k8s/create (first vols))
         pvc-xlog (k8s/create (second vols))]
-    [pvc-data pvc-xlog]))
+    [pvc-data pvc-xlog]
+    ))
 
 
-(defn destroy-pvc [spec]
+(defmethod u/*fn ::destroy-pvc [{spec :spec}]
   (let [cfg      {:prefix "api" :apiVersion "v1" :ns "default"}
         vols     (volume-claims spec)
         pvc-data (k8s/delete  (first vols))
-        pvc-xlog (k8s/delete (second vols))]))
+        pvc-xlog (k8s/delete (second vols))])
+  )
+
+(defn vpc-created? [{spec :spec}]
+
+  )
 
 (def state-machine
-  {[:tick :init :creating-vpc] {:probe :vpc-created
+  {[:tick :init :creating-vpc] {:probe vpc-created?
                                 :to :init-cluster}})
 
 (defn reconcile [ev pg state]
-
   )
 
 (comment
