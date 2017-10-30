@@ -2,7 +2,12 @@
   (:require [clj-yaml.core :as yaml]
             [k8s.core :as k8s]
             [clojure.string :as str]
-            [cheshire.core :as json]))
+            [cheshire.core :as json])
+  (:gen-class))
+
+(def data-path "/data")
+(def wals-path "/wals")
+(def config-path "/config")
 
 (defn debug [x]
   (spit "/tmp/result.yaml"
@@ -197,9 +202,6 @@ host  replication postgres 0.0.0.0/0 md5
    {:name (config-map-name cluster)
     :configMap {:name (config-map-name cluster)}}])
 
-(def data-path "/data")
-(def wals-path "/wals")
-(def config-path "/config")
 
 (defn volume-mounts [cluster inst-spec]
   [{:name (data-volume-name inst-spec)
@@ -247,6 +249,30 @@ host  replication postgres 0.0.0.0/0 md5
                                     :command (initdb-command secret)}))
 
 
+(defn init-replica-command [cluster secret color]
+  (let [host (cluster-name cluster)
+        user (k8s/base64-decode (get-in secret [:data :username]))
+        password (k8s/base64-decode (get-in secret [:data :password]))]
+    ["/bin/sh"
+     "-c"
+     "-x"
+     (str/join " && "
+               [(format "rm -rf %s/*" data-path)
+                (format "echo '%s:5432:*:%s:%s' >> ~/.pgpass" host user password)
+                (format "/pg/bin/psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
+                (format "/pg/bin/pg_basebackup -D %s -Fp -h %s -U %s -w -R -Xs -c fast -l %s -P -v" data-path host user color)
+                (format "echo \"primary_slot_name = '%s'\" >> %s/recovery.conf" color data-path )
+                (format "echo \"standby_mode = 'on'\" >> %s/recovery.conf" data-path)
+                (format "chown postgres -R %s" data-path)
+                (format "chown postgres -R %s" wals-path)
+                (format "chmod -R 0700 %s" data-path)])]))
+
+(defn init-replica-pod [cluster secret inst-spec]
+  (db-pod cluster secret inst-spec {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
+                                    :restartPolicy "Never"
+                                    :command (init-replica-command cluster secret (get-in inst-spec [:metadata :labels :color]))}))
+
+
 ;; TODO liveness https://github.com/kubernetes/kubernetes/issues/7891
 (defn master-pod [cluster secret inst-spec opts]
   (db-pod cluster secret inst-spec
@@ -256,7 +282,20 @@ host  replication postgres 0.0.0.0/0 md5
                         (str "--hba-file=" config-path "/pg_hba.conf")]})))
 
 (defn master-deployment [cluster secret inst-spec]
-  (let [pod (master-pod cluster secret inst-spec {:name (str "pg3-" (get-in cluster [:metadata :name]))})]
+  (let [pod (master-pod cluster secret inst-spec
+                        {:name (str "pg3-" (get-in cluster [:metadata :name])
+                                    "-" (get-in inst-spec [:metadata :labels :color]))})]
+    {:apiVersion "apps/v1beta1"
+     :kind "Deployment"
+     :metadata (:metadata pod) 
+     :spec {:replicas 1
+            :template (update pod :metadata dissoc :name)}}))
+
+(defn replica-deployment [cluster secret inst-spec]
+  (let [pod (master-pod cluster secret inst-spec
+                        {:name (str "pg3-" (get-in cluster [:metadata :name])
+                                    "-" (get-in inst-spec [:metadata :labels :color])
+                                    )})]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
      :metadata (:metadata pod) 
@@ -276,7 +315,38 @@ host  replication postgres 0.0.0.0/0 md5
                    :port 5432
                    :targetPort 5432}]}})
 
+(defn watch []
+  (println "Watching")
+  (println (k8s/query cluster-definition))
+  )
+
+(defonce server (atom nil))
+(defn stop []
+  (when-let [thr @server]
+    (.interrupt thr)
+    (reset! server nil)))
+
+(defn start []
+  (stop)
+  (let [thr (Thread.
+             (fn []
+               (println "Start")
+               (try
+                 (while (not (Thread/interrupted))
+                   (watch)
+                   (Thread/sleep 10000))
+                 (catch java.lang.InterruptedException e
+                   (println "Bay, bay")))))]
+    (reset! server thr)
+    (.start thr)))
+
+(defn -main []
+  (start))
+
 (comment
+
+  (start)
+  (stop)
 
   (->
    (init)
@@ -364,6 +434,30 @@ host  replication postgres 0.0.0.0/0 md5
       (k8s/patch)
       (debug))
 
+
+  (def inst-slave
+    (->
+     test-db
+     (instance-spec "blue" "replica")))
+
+  inst-slave
+
+  (k8s/create inst-slave)
+
+  (create-volumes inst-slave)
+
+
+  (->
+   (init-replica-pod test-db db-secret inst-slave)
+   (k8s/create)
+   (debug))
+
+  #_(k8s/delete
+   (init-replica-pod test-db db-secret inst-slave))
+
+  (-> (replica-deployment test-db db-secret inst-slave)
+      (k8s/patch)
+      (debug))
 
   )
 
