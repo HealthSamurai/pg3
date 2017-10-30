@@ -4,7 +4,7 @@ Kubernetes custom controller for HA PostgreSQL
 
 ## Architecture
 
-![pg3](doc/pg3)
+![pg3](./doc/pg3)
 
 ## Installation
 
