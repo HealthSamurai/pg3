@@ -5,10 +5,12 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.9.0-alpha16"]
                  [ch.qos.logback/logback-classic "1.2.2"]
+                 [clj-json-patch "0.1.4"]
                  [org.clojure/tools.logging "0.3.1"]
+                 [org.clojure/java.jdbc "0.6.1"]
+                 [org.postgresql/postgresql "9.4.1211.jre7"]
                  [org.clojure/core.async "0.3.443"]
                  [cheshire "5.7.1"]
-                 [clj-json-patch "0.1.4"]
                  [hiccup "1.0.5"]
                  [route-map "0.0.4"]
                  [morse   "0.2.4"]

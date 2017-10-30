@@ -63,7 +63,7 @@
                (str (name k) "=" (java.net.URLEncoder/encode (str v)))))
        (str/join "&")))
 
-(to-query-string {:a 1 :b "x in (z)"})
+;; (to-query-string {:a 1 :b "x in (z)"})
 
 (defn pluralize [x]
   (inflections/plural x))
