@@ -28,14 +28,14 @@
 (defn cluster-name [cluster]
   (str "pg3-" (resource-name cluster)))
 
-(defn config-map-name [cluster]
-  (cluster-name cluster))
+(defn config-map-name [cluster-name]
+  (str "pg3-" cluster-name))
 
-(defn secret-name [cluster]
-  (cluster-name cluster))
+(defn secret-name [cluster-name]
+  (str "pg3-" cluster-name))
 
-(defn service-name [cluster]
-  (cluster-name cluster))
+(defn service-name [cluster-name]
+  (str "pg3-" cluster-name))
 
 (defn instance-name [cluster color]
   (str (cluster-name cluster) "-" color))
@@ -62,8 +62,8 @@
   {:pgrole role
    :color color})
 
-(defn master-service-selector [cluster]
-  {:service (cluster-name cluster) 
+(defn master-service-selector [cluster-name]
+  {:service (str "pg3-" cluster-name) 
    :pgrole "master"})
 
 (defn replica-service-name [inst-spec]

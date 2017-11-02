@@ -144,7 +144,7 @@ host  replication postgres 0.0.0.0/0 md5
 (defn config-map [cluster]
   {:kind "ConfigMap"
    :apiVersion "v1"
-   :metadata {:name (naming/config-map-name cluster) 
+   :metadata {:name (naming/config-map-name (get-in cluster [:metadata :name])) 
               :labels (inherited-labels cluster)
               :namespace (inherited-namespace cluster)}
    :data {"postgresql.conf" (pg-config cluster)
@@ -158,7 +158,7 @@ host  replication postgres 0.0.0.0/0 md5
   {:kind "Secret"
    :apiVersion "v1"
    :type "Opaque"
-   :metadata {:name (naming/secret-name cluster)
+   :metadata {:name (naming/secret-name (get-in cluster [:metadata :name]))
               :labels (inherited-labels cluster) 
               :namespace (inherited-namespace cluster)}
    :data {:username (k8s/base64-encode "postgres")
@@ -167,26 +167,26 @@ host  replication postgres 0.0.0.0/0 md5
 (defn image [{spec :spec}]
   (str (:image spec) ":" (:version spec)))
 
-(defn volumes [cluster inst-spec]
+(defn volumes [inst-spec]
   [(let [nm (naming/data-volume-name inst-spec)]
      {:name nm :persistentVolumeClaim {:claimName nm}})
    (let [nm (naming/wals-volume-name inst-spec)]
      {:name nm :persistentVolumeClaim {:claimName nm}})
-   (let [nm (naming/config-map-name cluster)]
+   (let [nm (naming/config-map-name (get-in inst-spec [:spec :pg]))]
      {:name nm :configMap {:name nm}})])
 
 
-(defn volume-mounts [cluster inst-spec]
+(defn volume-mounts [inst-spec]
   [{:name (naming/data-volume-name inst-spec)
     :mountPath naming/data-path
     :subPath "pgdata"}
    {:name (naming/wals-volume-name inst-spec)
     :mountPath naming/wals-path
     :subPath "pgwals"}
-   {:name (naming/config-map-name cluster)
+   {:name (naming/config-map-name (get-in inst-spec [:spec :pg]))
     :mountPath naming/config-path}])
 
-(defn initdb-command [secret]
+(defn initdb-command []
   ["/bin/sh"
    "-c"
    "-x"
@@ -195,29 +195,30 @@ host  replication postgres 0.0.0.0/0 md5
               (format "chown postgres -R %s" naming/wals-path)
               (format "su -m -l postgres -c 'bash %s/initscript'" naming/config-path)])])
 
-(defn db-pod [cluster secret inst-spec opts]
+(defn db-pod [inst-spec opts]
   {:kind "Pod"
    :apiVersion "v1"
    :metadata {:name (:name opts)
               :namespace (inherited-namespace inst-spec)
               :labels (inherited-labels inst-spec)}
    :spec {:restartPolicy (or (:restartPolicy opts) "Always")
-          :volumes (volumes cluster inst-spec)
+          :volumes (volumes inst-spec)
           :containers
           [{:name "pg"
             :image (image inst-spec)
             :ports [{:containerPort 5432}]
             :env
             [{:name "PGUSER" :value "postgres"}
-             {:name "PGPASSWORD" :valueFrom {:secretKeyRef {:name (naming/secret-name cluster)
+             {:name "PGPASSWORD" :valueFrom {:secretKeyRef {:name (naming/secret-name (get-in inst-spec [:spec :pg]))
                                                             :key "password"}}}]
             :command (:command opts)
-            :volumeMounts (volume-mounts cluster inst-spec)}]}})
+            :volumeMounts (volume-mounts inst-spec)}]}})
 
-(defn initdb-pod [cluster secret inst-spec]
-  (db-pod cluster secret inst-spec {:name (str (get-in inst-spec [:metadata :name]) "-initdb")
-                                    :restartPolicy "Never"
-                                    :command (initdb-command secret)}))
+(defn initdb-pod [inst-spec]
+  (db-pod inst-spec
+          {:name (str (get-in inst-spec [:metadata :name]) "-initdb")
+           :restartPolicy "Never"
+           :command (initdb-command)}))
 
 
 (defn init-replica-command [cluster secret color]
@@ -239,22 +240,22 @@ host  replication postgres 0.0.0.0/0 md5
                 (format "chmod -R 0700 %s" naming/data-path)])]))
 
 (defn init-replica-pod [cluster secret inst-spec]
-  (db-pod cluster secret inst-spec {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
-                                    :restartPolicy "Never"
-                                    :command (init-replica-command cluster secret (get-in inst-spec [:metadata :labels :color]))}))
+  (db-pod inst-spec {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
+                     :restartPolicy "Never"
+                     :command (init-replica-command cluster secret (get-in inst-spec [:metadata :labels :color]))}))
 
 
 ;; TODO liveness https://github.com/kubernetes/kubernetes/issues/7891
-(defn master-pod [cluster secret inst-spec opts]
-  (db-pod cluster secret inst-spec
+(defn master-pod [inst-spec opts]
+  (db-pod inst-spec
           (merge opts {:command
                        ["gosu", "postgres", "postgres",
                         (str "--config-file=" naming/config-path "/postgresql.conf")
                         (str "--hba-file=" naming/config-path "/pg_hba.conf")]})))
 
-(defn master-deployment [cluster secret inst-spec]
-  (let [pod (master-pod cluster secret inst-spec
-                        {:name (str "pg3-" (get-in cluster [:metadata :name])
+(defn master-deployment [inst-spec]
+  (let [pod (master-pod inst-spec
+                        {:name (str "pg3-" (get-in inst-spec [:spec :pg])
                                     "-" (get-in inst-spec [:metadata :labels :color]))})]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
@@ -273,17 +274,18 @@ host  replication postgres 0.0.0.0/0 md5
      :spec {:replicas 1
             :template (update pod :metadata dissoc :name)}}))
 
-(defn master-service [cluster inst-spec]
-  {:apiVersion "v1"
-   :kind "Service"
-   :metadata {:name (naming/service-name cluster) 
-              :namespace (inherited-namespace cluster)
-              :labels (inherited-labels cluster)}
-   :spec {:selector (naming/master-service-selector cluster) 
-          :type "ClusterIP"
-          :ports [{:protocol "TCP"
-                   :port 5432
-                   :targetPort 5432}]}})
+(defn master-service [inst-spec]
+  (let [cluster-name (get-in inst-spec [:spec :pg])]
+    {:apiVersion "v1"
+     :kind "Service"
+     :metadata {:name (naming/service-name cluster-name) 
+                :namespace (inherited-namespace inst-spec)
+                :labels (inherited-labels inst-spec)}
+     :spec {:selector (naming/master-service-selector cluster-name) 
+            :type "ClusterIP"
+            :ports [{:protocol "TCP"
+                     :port 5432
+                     :targetPort 5432}]}}))
 
 (defn slave-service [cluster inst-spec]
   (let [clr (get-in inst-spec [:metadata :labels :color])]
