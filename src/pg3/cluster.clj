@@ -29,10 +29,9 @@
                       :apiVersion naming/api
                       :status {:phase "init"
                                :ts (java.util.Date.)}))))
-(defn inited-cluster? [cluster]
-  (println "INITITED cluster: " cluster)
 
-  )
+(defn inited-cluster? [cluster]
+  (println "INITITED cluster: " cluster))
 
 (defn cluster-status [cluster]
   (println "Status cluster: [" (:status cluster) "]" cluster)

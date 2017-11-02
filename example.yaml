@@ -6,11 +6,11 @@ config:
     shared_preload_libraries: pg_pathman
     shared_buffers: 1GB
 metadata:
-  name: testdb
+  name: cleo-master
   namespace: default
 spec:
   image: aidbox/aidboxdb
-  size: 5Gi
+  size: 100Gi
   version: passive
   storageClass: "standard"
   replicas:
