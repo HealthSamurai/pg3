@@ -42,7 +42,7 @@
     ;; TODO check status
     (let [pod (model/initdb-pod inst)
           res (k8s/create pod)]
-      (->  (yaml/generate-string)
+      (->  (yaml/generate-string res)
            (println))
       (update-status inst {:phase "waiting-master-initdb"
                            :initdbPod (get-in pod [:metadata :name])}))))

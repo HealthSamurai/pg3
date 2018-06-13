@@ -37,10 +37,10 @@
   (println "Status cluster: [" (:status cluster) "]" cluster)
 
   (let [instances (:items (k8s/query {:kind naming/instance-resource-kind
-                               :ns (get-in cluster [:metadata :namespace])
-                               :apiVersion naming/api}
-                              {:labelSelector
-                               (format "service in (%s)" (naming/cluster-name cluster))}))]
+                                      :ns (get-in cluster [:metadata :namespace])
+                                      :apiVersion naming/api}
+                                     {:labelSelector
+                                      (format "service in (%s)" (naming/cluster-name cluster))}))]
     (k8s/patch (assoc cluster
                       :kind naming/cluster-resource-kind
                       :apiVersion naming/api
@@ -65,5 +65,4 @@
 
 (comment
   (watch-clusters)
-
   )

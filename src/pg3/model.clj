@@ -41,7 +41,8 @@
               :labels (merge (naming/cluster-labels cluster)
                              (naming/instance-labels role color))}
    :spec (merge (:spec cluster)
-                {:pg (naming/resource-name cluster) :role role})
+                {:pg-cluster (naming/resource-name cluster)
+                 :role role})
    :config (:config cluster)})
 
 (def default-volume-annotiations {"volume.beta.kubernetes.io/storage-class" "standard"})
@@ -172,7 +173,7 @@ host  replication postgres 0.0.0.0/0 md5
      {:name nm :persistentVolumeClaim {:claimName nm}})
    (let [nm (naming/wals-volume-name inst-spec)]
      {:name nm :persistentVolumeClaim {:claimName nm}})
-   (let [nm (naming/config-map-name (get-in inst-spec [:spec :pg]))]
+   (let [nm (naming/config-map-name (get-in inst-spec [:spec :pg-cluster]))]
      {:name nm :configMap {:name nm}})])
 
 
@@ -183,7 +184,7 @@ host  replication postgres 0.0.0.0/0 md5
    {:name (naming/wals-volume-name inst-spec)
     :mountPath naming/wals-path
     :subPath "pgwals"}
-   {:name (naming/config-map-name (get-in inst-spec [:spec :pg]))
+   {:name (naming/config-map-name (get-in inst-spec [:spec :pg-cluster]))
     :mountPath naming/config-path}])
 
 (defn initdb-command []
@@ -209,8 +210,9 @@ host  replication postgres 0.0.0.0/0 md5
             :ports [{:containerPort 5432}]
             :env
             [{:name "PGUSER" :value "postgres"}
-             {:name "PGPASSWORD" :valueFrom {:secretKeyRef {:name (naming/secret-name (get-in inst-spec [:spec :pg]))
-                                                            :key "password"}}}]
+             {:name "PGPASSWORD" :valueFrom {:secretKeyRef
+                                             {:name (naming/secret-name (get-in inst-spec [:spec :pg-cluster]))
+                                              :key "password"}}}]
             :command (:command opts)
             :volumeMounts (volume-mounts inst-spec)}]}})
 
@@ -255,7 +257,7 @@ host  replication postgres 0.0.0.0/0 md5
 
 (defn master-deployment [inst-spec]
   (let [pod (master-pod inst-spec
-                        {:name (str "pg3-" (get-in inst-spec [:spec :pg])
+                        {:name (str "pg3-" (get-in inst-spec [:spec :pg-cluster])
                                     "-" (get-in inst-spec [:metadata :labels :color]))})]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
@@ -275,7 +277,7 @@ host  replication postgres 0.0.0.0/0 md5
             :template (update pod :metadata dissoc :name)}}))
 
 (defn master-service [inst-spec]
-  (let [cluster-name (get-in inst-spec [:spec :pg])]
+  (let [cluster-name (get-in inst-spec [:spec :pg-cluster])]
     {:apiVersion "v1"
      :kind "Service"
      :metadata {:name (naming/service-name cluster-name) 

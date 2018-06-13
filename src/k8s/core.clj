@@ -9,12 +9,16 @@
    [clojure.tools.logging :as log]
    [clojure.string :as str]))
 
-(def default-headers
+#_(def default-headers
   (if-let [token (System/getenv "KUBE_TOKEN")]
     {"Authorization" (str "Bearer " token)}
     {}))
 
-(def kube-url (or (System/getenv "KUBE_URL") "http://localhost:8001"))
+
+(def default-headers {"Authorization" (str "Bearer " token)})
+
+#_(def kube-url (or (System/getenv "KUBE_URL") "http://localhost:8001"))
+
 
 (defn url [pth]
   (str kube-url "/" pth))
@@ -82,11 +86,12 @@
                     (str "/" (str/join "/" path)))
                   (when params (str "?" (to-query-string params)))))))
 
-(resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1"})
-(resource-url {:kind "PersistentVolumeClaim" :apiVersion "apiextensions.k8s.io/v1beta1"} {:labelSelector "system in (c3)"})
+(comment
+  (resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1"})
+  (resource-url {:kind "PersistentVolumeClaim" :apiVersion "apiextensions.k8s.io/v1beta1"} {:labelSelector "system in (c3)"})
 
-(resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1" :ns "test"})
-(resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1" :ns "test"})
+  (resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1" :ns "test"})
+  (resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1" :ns "test"}))
 
 
 (defn query [cfg & pth]
@@ -353,4 +358,15 @@
                  :ns "pg3"
                  :apiVersion "v1"}
                 :persistentvolumes)))
+  
+  (clojure.pprint/pprint
+   (query {:kind "Pod"
+           :ns "pg3"
+           :apiVersion "v1"}))
+
+  (clojure.pprint/pprint
+   (delete {:kind "Pod"
+            :ns "pg3"
+            :metadata {:name "aidboxdb"}
+            :apiVersion "v1"}))
   )

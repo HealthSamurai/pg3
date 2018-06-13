@@ -8,9 +8,9 @@
 (def api-version "v1")
 (def api (str api-group "/" api-version))
 
-(def cluster-resource-name (str "pgs." api-group))
-(def cluster-resource-kind "Pg")
-(def cluster-resource-plural "pgs")
+(def cluster-resource-name (str "pgclusters." api-group))
+(def cluster-resource-kind "PgCluster")
+(def cluster-resource-plural "pgclusters")
 
 (def instance-resource-name (str "pginstances." api-group))
 (def instance-resource-kind "PgInstance")

@@ -1,4 +1,30 @@
-(ns pg3.scratch)
+(ns pg3.scratch
+  (:require [k8s.core :as k8s]
+            [pg3.model :as m]
+            [pg3.cluster :as cluster]
+            [pg3.instance :as instance]))
+
+(comment
+  (k8s/create m/cluster-definition)
+  (k8s/create m/instance-definition)
+
+  (def perseus-cluster
+    {:kind "PgCluster"
+     :ns "pg3"
+     :apiVersion "pg3.io/v1"
+     :metadata {:name "perseus"
+                :labels {:service "pegasus"
+                         :system "pg3"}}
+     :spec {:image "aidbox/aidboxdb"
+            :version "passive"
+            :size "1Gi"
+            :replicas {:sync 1}}
+     :config {:config {:shared_buffers "1GB"
+                       :max_connections 100}}})
+  (k8s/create perseus-cluster)
+  (cluster/watch-clusters)
+  (instance/watch-instances)
+  )
 
 (comment
 
