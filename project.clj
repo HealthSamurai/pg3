@@ -1,4 +1,4 @@
-(defproject ci3 "0.0.1-SNAPSHOT"
+(defproject pg3 "0.0.1-SNAPSHOT"
   :description "pg in k8s"
   :url "http://pg.org"
   :license {:name "Eclipse Public License"
@@ -29,4 +29,6 @@
                  [matcho "0.1.0-RC5"]]
   :uberjar-name "pg3.jar"
   :main pg3.core
-  :profiles {:uberjar {:aot :all :omit-source true}})
+  :profiles {:dev {:source-paths  ["test" "src"]
+                   :plugins [[lein-dotenv "RELEASE"]]}
+             :uberjar {:aot :all :omit-source true}})

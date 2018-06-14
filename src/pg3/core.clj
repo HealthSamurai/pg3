@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [cheshire.core :as json]
             [pg3.cluster :as cluster]
+            [pg3.telegram :as telegram]
             [pg3.instance :as instance])
   (:gen-class))
 
@@ -22,6 +23,7 @@
 
 (defn start []
   (stop)
+  (telegram/start)
   (let [thr (Thread.
              (fn []
                (println "Start")
@@ -30,6 +32,7 @@
                    (watch)
                    (Thread/sleep 10000))
                  (catch java.lang.InterruptedException e
+                   (telegram/stop)
                    (println "Bay, bay")))))]
     (reset! server thr)
     (.start thr)))

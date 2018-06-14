@@ -9,16 +9,12 @@
    [clojure.tools.logging :as log]
    [clojure.string :as str]))
 
-#_(def default-headers
+(def default-headers
   (if-let [token (System/getenv "KUBE_TOKEN")]
     {"Authorization" (str "Bearer " token)}
     {}))
 
-
-(def default-headers {"Authorization" (str "Bearer " token)})
-
-#_(def kube-url (or (System/getenv "KUBE_URL") "http://localhost:8001"))
-
+(def kube-url (or (System/getenv "KUBE_URL") "http://localhost:8001"))
 
 (defn url [pth]
   (str kube-url "/" pth))
