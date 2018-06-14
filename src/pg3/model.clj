@@ -261,7 +261,7 @@ host  replication postgres 0.0.0.0/0 md5
                                     "-" (get-in inst-spec [:metadata :labels :color]))})]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
-     :metadata (:metadata pod) 
+     :metadata (:metadata pod)
      :spec {:replicas 1
             :template (update pod :metadata dissoc :name)}}))
 

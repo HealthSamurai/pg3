@@ -24,6 +24,19 @@
   (k8s/create perseus-cluster)
   (cluster/watch-clusters)
   (instance/watch-instances)
+
+  (def instance-name "pg3-perseus-lightcoral")
+  
+  (instance/update-status (k8s/find {:kind "PgInstance"
+                                     :apiVersion "pg3.io/v1"
+                                     :metadata {:namespace "pg3"
+                                                :name instance-name}})
+                          {:phase "init-volumes"})
+  (instance/update-status (k8s/find {:kind "PgInstance"
+                                     :apiVersion "pg3.io/v1"
+                                     :metadata {:namespace "pg3"
+                                                :name instance-name}})
+                          {:phase "active"})
   )
 
 (comment
