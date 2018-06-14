@@ -35,8 +35,16 @@
     (when ready?
       (update-status inst {:phase "waiting-init"}))))
 
+
+(defn instance-status [inst]
+
+  (println "DEFAULT: "
+           (get-in inst [:metadata :name])
+           " "
+           (get-in inst [:status :phase])))
+
 (defn init-instance [inst]
-  (when (= "master"
+  (if (= "master"
            (get-in inst [:spec :role]))
 
     ;; TODO check status
@@ -45,7 +53,8 @@
       (->  (yaml/generate-string res)
            (println))
       (update-status inst {:phase "waiting-master-initdb"
-                           :initdbPod (get-in pod [:metadata :name])}))))
+                           :initdbPod (get-in pod [:metadata :name])}))
+    (instance-status inst)))
 
 (defn master-inited? [inst]
   (let [pod-name (or (get-in inst [:status :initdbPod])
@@ -85,13 +94,6 @@
 
     )
   )
-
-(defn instance-status [inst]
-
-  (println "DEFAULT: "
-           (get-in inst [:metadata :name])
-           " "
-           (get-in inst [:status :phase])))
 
 (defn watch-instance [{st :status :as inst}]
   (cond
