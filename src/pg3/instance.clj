@@ -15,7 +15,7 @@
                          {:lastUpdate (java.util.Date.)}
                          status))))
 
-(defn init-instance [inst]
+(defn init-instance-volumes [inst]
   (let [data-v (k8s/patch (model/instance-data-volume-spec inst))
         wals-v (k8s/patch (model/instance-wals-volume-spec inst))]
     (update-status inst {:volumes [data-v wals-v]
@@ -74,8 +74,8 @@
   (println "master started?" inst)
   (let [service-spec (model/master-service inst)
         service (k8s/patch service-spec)]
-    
-    (-> service 
+
+    (-> service
         yaml/generate-string
         println)
 
@@ -95,7 +95,7 @@
 
 (defn watch-instance [{st :status :as inst}]
   (cond
-    (nil? st) (init-instance inst)
+    (nil? st) (init-instance-volumes inst)
 
     (= "waiting-volumes" (:phase st))
     (volumes-ready? inst)
