@@ -47,7 +47,7 @@
 (defn make-message [phase text res]
   (let [kind (:kind res)
         res-name (get-in res [:metadata :name])]
-    (format "Resource *%s*:*%s* finish phase *%s* with _%s_" kind res-name phase text)))
+    (format "Resource *%s*:*%s* finish phase *%s*%s" kind res-name phase (if text (format " with _%s_" text) ""))))
 
 (def okEmoji (apply str (Character/toChars 9989)))
 (def noEmoji (apply str (Character/toChars 10060)))

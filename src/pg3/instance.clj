@@ -4,7 +4,9 @@
             [clojure.string :as str]
             [pg3.naming :as naming]
             [pg3.model :as model]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [pg3.utils :as ut]
+            [unifn.core :as u]))
 
 (defn update-status [inst status]
   (k8s/patch
@@ -19,7 +21,9 @@
   (let [data-v (k8s/patch (model/instance-data-volume-spec inst))
         wals-v (k8s/patch (model/instance-wals-volume-spec inst))]
     (update-status inst {:volumes [data-v wals-v]
-                         :phase "waiting-volumes"})))
+                         :phase "waiting-volumes"}))
+  {:status :ok
+   :text "Instance volumes requested"})
 
 (defn volumes-ready? [inst]
   (let [vols (get-in inst [:status :volumes])
@@ -33,7 +37,9 @@
                     (and acc (= "Bound" (get-in pvc [:status :phase])))))
                 true vols)]
     (when ready?
-      (update-status inst {:phase "waiting-init"}))))
+      (update-status inst {:phase "waiting-init"}))
+    {:status :ok
+     :text (if ready? "Instance volumes ready" "Waiting instance volumes")}))
 
 
 (defn instance-status [inst]
@@ -43,17 +49,20 @@
            (get-in inst [:status :phase])))
 
 (defn init-instance [inst]
-  (if (= "master"
-           (get-in inst [:spec :role]))
-
+  (if (= "master" (get-in inst [:spec :role]))
     ;; TODO check status
     (let [pod (model/initdb-pod inst)
           res (k8s/create pod)]
       (->  (yaml/generate-string res)
            (println))
       (update-status inst {:phase "waiting-master-initdb"
-                           :initdbPod (get-in pod [:metadata :name])}))
-    (instance-status inst)))
+                           :initdbPod (get-in pod [:metadata :name])})
+      {:status :ok
+       :text "Master initialize started"})
+    (do 
+      (update-status inst {:phase "replica-not-implemented"})
+      {:status :ok
+       :text "Replica not implemented"})))
 
 (defn master-inited? [inst]
   (let [pod-name (or (get-in inst [:status :initdbPod])
@@ -65,9 +74,16 @@
         phase (get-in pod [:status :phase])]
     (cond
       (= "Succeeded" phase)
-      (update-status inst {:phase "master-ready-to-start"})
+      (do
+        (update-status inst {:phase "master-ready-to-start"})
+        {:status :ok
+         :text "Master ready to start"})
 
-      :else (println "TODO:" phase))))
+      :else
+      (do
+        (println "Init Db Pod is not success: " pod)
+        {:status :ok
+         :text (str "Init db fail: " pod-name)}))))
 
 (defn start-master [inst]
   (println "Start master" inst)
@@ -75,7 +91,9 @@
         depl (k8s/create depl-spec)]
     (-> (update-status inst {:phase "master-starting"})
         yaml/generate-string
-        println)))
+        println)
+    {:status :ok
+     :text "Master starting"}))
 
 (defn master-starting [inst]
   ;; TODO check deployment status
@@ -90,30 +108,31 @@
     (-> (update-status inst {:phase "active"})
         yaml/generate-string
         println)
-
-    )
-  )
+    {:status :ok
+     :text "Master service created"}))
 
 (defn watch-instance [{st :status :as inst}]
   (cond
-    (nil? st) (init-instance-volumes inst)
+    (nil? st)
+    (ut/exec-phase "init-volumes" init-instance-volumes inst)
 
     (= "waiting-volumes" (:phase st))
-    (volumes-ready? inst)
+    (ut/exec-phase (:phase st) volumes-ready? inst)
 
     (= "waiting-init" (:phase st))
-    (init-instance inst)
+    (ut/exec-phase (:phase st) init-instance inst)
 
     (= "waiting-master-initdb" (:phase st))
-    (master-inited? inst)
+    (ut/exec-phase (:phase st) master-inited? inst)
 
     (= "master-ready-to-start" (:phase st))
-    (start-master inst)
+    (ut/exec-phase (:phase st) start-master inst)
 
     (= "master-starting" (:phase st))
-    (master-starting inst)
+    (ut/exec-phase (:phase st) master-starting inst)
 
-    :else  (instance-status inst)))
+    :else
+    (instance-status inst)))
 
 (defn watch-instances []
   (doseq [inst (:items (k8s/query {:kind naming/instance-resource-kind :apiVersion naming/api}))]
