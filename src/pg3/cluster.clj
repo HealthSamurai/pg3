@@ -4,7 +4,8 @@
             [clojure.string :as str]
             [pg3.naming :as naming]
             [pg3.model :as model]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [pg3.telegram :as t]))
 
 ;; watch new clusters 
 ;; orchestarate setup
@@ -43,7 +44,9 @@
                                :kind naming/cluster-resource-kind
                                :apiVersion naming/api
                                :status {:phase "init"
-                                        :ts (java.util.Date.)})))))
+                                        :ts (java.util.Date.)})))
+    {:status :ok
+     :text "Cluster initialized"}))
 
 (defn inited-cluster? [cluster]
   (println "INITITED cluster: " cluster))
@@ -63,10 +66,19 @@
                                             (assoc acc (naming/resource-name i) (:status i)))
                                           {} instances)})))))
 
+(defn exec-phase [phase f res]
+  (println "phase" phase res)
+  (try
+    (let [{:keys [status text]} (f res)]
+      (if (= status :ok)
+        (t/success phase text res)
+        (t/error phase text res)))
+    (catch Throwable th (t/error phase (.getMessage th) res))))
+
 (defn watch-cluster [{status :status :as cluster}]
   (cond
     (or (nil? status)
-        (= (:phase status) "reinit")) (init-cluster cluster)
+        (= (:phase status) "reinit")) (exec-phase (or (:phase status) "init") init-cluster cluster)
     (= "init" (:phase status)) (inited-cluster? cluster)
     :else (cluster-status cluster)))
 

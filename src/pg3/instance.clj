@@ -37,7 +37,6 @@
 
 
 (defn instance-status [inst]
-
   (println "DEFAULT: "
            (get-in inst [:metadata :name])
            " "
