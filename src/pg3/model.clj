@@ -67,7 +67,7 @@
    {:name (naming/data-volume-name inst-spec)
     :labels (merge (inherited-labels inst-spec) {:pgrole "data"})
     :namespace (inherited-namespace inst-spec)
-    :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass])}
+    :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
     :storage (get-in inst-spec [:spec :size])}))
 
 (defn instance-wals-volume-spec [inst-spec]
@@ -75,7 +75,7 @@
    {:name (naming/wals-volume-name inst-spec)
     :labels (merge (inherited-labels inst-spec) {:pgrole "data"})
     :namespace (inherited-namespace inst-spec)
-    :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass])}
+    :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
     :storage (get-in inst-spec [:spec :size])}))
 
 (def preffered-postgresql-config
