@@ -12,11 +12,25 @@
 ;; watch status of clusters
 ;; based on instances state
 
+(defn find-pginstance-by-role [instances role]
+  (first (filter #(= role (get-in % [:spec :role])) instances)))
+
+(defn my-pginstances [cluster]
+  (let [pginstances (:items (k8s/query {:kind naming/instance-resource-kind
+                                        :ns (get-in cluster [:metadata :namespace])
+                                        :apiVersion naming/api}
+                                       {:labelSelector
+                                        (format "service in (%s)" (naming/cluster-name cluster))}))]
+    [(find-pginstance-by-role pginstances "master")
+     (find-pginstance-by-role pginstances "replica")]))
+
+
 (defn init-cluster [cluster]
   (println "INIT cluster: " cluster)
-  (let [colors (take 2 naming/colors)
-        master (model/instance-spec cluster (first colors) "master")
-        replica (model/instance-spec cluster (second colors) "replica")]
+  (let [[old-master old-replica] (my-pginstances cluster)
+        colors (take 2 (shuffle naming/colors))
+        master (or old-master (model/instance-spec cluster (first colors) "master"))
+        replica (or old-replica (model/instance-spec cluster (second colors) "replica"))]
 
 
     (println "Create config: "  (k8s/patch (model/config-map cluster)))
@@ -24,11 +38,12 @@
     (println "Create master: "  (k8s/patch master))
     (println "Create replica: " (k8s/patch replica))
 
-    (k8s/patch (assoc cluster
-                      :kind naming/cluster-resource-kind
-                      :apiVersion naming/api
-                      :status {:phase "init"
-                               :ts (java.util.Date.)}))))
+    (println "Update cluster state: "
+             (k8s/patch (assoc cluster
+                               :kind naming/cluster-resource-kind
+                               :apiVersion naming/api
+                               :status {:phase "init"
+                                        :ts (java.util.Date.)})))))
 
 (defn inited-cluster? [cluster]
   (println "INITITED cluster: " cluster))
@@ -36,11 +51,7 @@
 (defn cluster-status [cluster]
   (println "Status cluster: [" (:status cluster) "]" cluster)
 
-  (let [instances (:items (k8s/query {:kind naming/instance-resource-kind
-                                      :ns (get-in cluster [:metadata :namespace])
-                                      :apiVersion naming/api}
-                                     {:labelSelector
-                                      (format "service in (%s)" (naming/cluster-name cluster))}))]
+  (let [instances (my-pginstances cluster)]
     (k8s/patch (assoc cluster
                       :kind naming/cluster-resource-kind
                       :apiVersion naming/api
@@ -54,7 +65,8 @@
 
 (defn watch-cluster [{status :status :as cluster}]
   (cond
-    (nil? status) (init-cluster cluster)
+    (or (nil? status)
+        (= (:phase status) "reinit")) (init-cluster cluster)
     (= "init" (:phase status)) (inited-cluster? cluster)
     :else (cluster-status cluster)))
 
