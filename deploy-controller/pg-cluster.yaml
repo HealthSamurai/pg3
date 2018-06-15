@@ -1,0 +1,18 @@
+kind: PgCluster
+ns: pg3
+apiVersion: pg3.io/v1
+metadata:
+  name: han-solo
+  labels:
+    service: star-wars
+    system: pg3
+spec:
+  image: aidbox/aidboxdb
+  version: passive
+  size: 1Gi
+  replicas:
+    sync: 1
+config:
+  config:
+    shared_buffers: 1GB
+    max_connections: 100

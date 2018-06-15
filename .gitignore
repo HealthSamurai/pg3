@@ -10,3 +10,4 @@ pom.xml.asc
 .hgignore
 .hg/
 .env
+deploy-controller/_secret.yml

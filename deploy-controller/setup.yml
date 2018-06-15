@@ -1,0 +1,41 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: pg3-controller
+  namespace: pg3-controller
+  labels:
+    app: pg3-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pg3-controller
+  template:
+    metadata:
+      labels:
+        app: pg3-controller
+    spec:
+      containers:
+      - name: pg3-controller
+        image: healthsamurai/pg3:0.0.1
+        env:
+        - name: KUBE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: KUBE_TOKEN
+              name: pg3-controller-secrets
+        - name: KUBE_URL
+          valueFrom:
+            secretKeyRef:
+              key: KUBE_URL
+              name: pg3-controller-secrets
+        - name: TELEGRAM_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: TELEGRAM_TOKEN
+              name: pg3-controller-secrets
+        - name: TELEGRAM_CHATID
+          valueFrom:
+            secretKeyRef:
+              key: TELEGRAM_CHATID
+              name: pg3-controller-secrets

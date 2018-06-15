@@ -1,6 +1,7 @@
 (ns pg3.core
   (:require [clj-yaml.core :as yaml]
             [k8s.core :as k8s]
+            [pg3.model :as m]
             [clojure.string :as str]
             [cheshire.core :as json]
             [pg3.cluster :as cluster]
@@ -24,6 +25,8 @@
 (defn start []
   (stop)
   (telegram/start)
+  (k8s/patch m/cluster-definition)
+  (k8s/patch m/instance-definition)
   (let [thr (Thread.
              (fn []
                (println "Start")

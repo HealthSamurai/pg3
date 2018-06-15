@@ -22,7 +22,6 @@
 
 (defn persistent-volume-claim-patch [spec]
   (let [res (k8s/find spec)]
-    (println "!11111111111!" (persistent-volume-claim? res) res)
     (if (persistent-volume-claim? res)
       res
       (k8s/patch spec))))
