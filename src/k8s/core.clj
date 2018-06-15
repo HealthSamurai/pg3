@@ -82,14 +82,6 @@
                     (str "/" (str/join "/" path)))
                   (when params (str "?" (to-query-string params)))))))
 
-(comment
-  (resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1"})
-  (resource-url {:kind "PersistentVolumeClaim" :apiVersion "apiextensions.k8s.io/v1beta1"} {:labelSelector "system in (c3)"})
-
-  (resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1" :ns "test"})
-  (resource-url {:kind "PersistentVolumeClaim" :apiVersion "v1" :ns "test"}))
-
-
 (defn query [cfg & pth]
   (println  (apply resource-url cfg pth))
   (let [res @(http-client/get
@@ -100,22 +92,6 @@
      :body
      (json/parse-string keyword)
      (resolve-secrets))))
-
-(defn do-find [cfg]
-  (let [res (query cfg (or (:id cfg) (get-in cfg [:metadata :name])))]
-    (when-not (= "Failure" (:status res))
-      res)))
-
-(defn create [res]
-  (let [uri (resource-url res)]
-    (println "POST" res)
-    (-> @(http-client/post
-          uri
-          {:body (json/generate-string (walk/stringify-keys res))
-           :insecure? true
-           :headers (merge default-headers {"Content-Type" "application/json"})})
-        :body
-        (json/parse-string))))
 
 (defn delete-collection [opts]
   (let [uri   (resource-url opts (select-keys opts [:labelSelector ]))]
@@ -129,15 +105,6 @@
 
 ;; ReplicationController, ReplicaSet, StatefulSet, DaemonSet, and Deployment
 
-(defn delete [res & [delete-opts]]
-  (-> @(http-client/delete
-        (str (resource-url res (get-in res [:metadata :name])))
-        (cond-> {:headers (merge default-headers {"Content-Type" "application/json"})
-                 :insecure? true}
-          delete-opts (assoc :body (json/generate-string (walk/stringify-keys delete-opts)))))
-      :body
-      (json/parse-string)))
-
 (defn get-json-patch [res nres]
   (println res)
   (let [-res (walk/stringify-keys (-> res
@@ -145,97 +112,6 @@
                                       (dissoc :status :selfLink)))
         -nres (walk/stringify-keys nres)]
     (patch/diff -res -nres)))
-
-(defn patch [nres]
-  (println "PATCH" (do-find nres))
-  (if-let [res (do-find nres)]
-    (let [diff  (get-json-patch res nres)
-          uri (resource-url nres (or (:id nres) (get-in nres [:metadata :name])))]
-      (println "PATCH" diff)
-      (->
-       @(http-client/patch
-         uri
-         {:body (json/generate-string diff)
-          :insecure? true
-          :headers (merge default-headers {"Content-Type" "application/json-patch+json"})})
-       :body
-       (json/parse-string keyword)))
-    (create nres)))
-
-(comment
-  ;; (map :resourceVersion (map :metadata (:items (list cfg :repositories))))
-  ;; (map :metadata)
-
-  ;; (do-find cfg :repositories "ci3")
-
-  ;; (resolve-secrets {:tar{:foo {:valueFrom {:secretKeyRef {:name "ci3" :key "bbKey"}}}}})
-  ;; (resolve-secrets (do-find cfg :repositories "ci3"))
-
-  ;; (patch cfg :repositories "ci3-chart" {:webhook nil})
-
-  ;; (secret "ci3" :mySecret)
-  ;; (secret "secrets" :github_token)
-
-  ;; (secret "bitbucket" :oauthConsumerSecret)
-
-  ;; (do-find cfg :builds "ci3-build-6")
-
-  ;; (patch cfg :builds "test-1" {:status "changed"})
-
-  ;; (delete cfg :repositories "ci3")
-
-
-  ;; (curl {} "api/v1/namespaces/default/pods/aitem-hook-test-d40a2375646990b2dec75e80cf97ce5a8a77a199/log")
-
-  ;; (create cfg :builds
-  ;;         {:kind "Build"
-  ;;          :apiVersion "ci3.io/v1"
-  ;;          :metadata {:name "test-00"}})
-  ;; (-> @(http-client/get
-  ;;       (url cfg (str "api/v1/namespaces/default/pods"))
-  ;;       {:insecure? true
-  ;;        :headers (merge default-headers {"Content-Type" "application/json"})})
-  ;;     :body
-  ;;     (json/parse-string))
-
-  ;; #_(query {:apiVersion "zeroci.io/v1"
-  ;;           :ns "default"}
-  ;;          :builds "test-1")
-
-  ;; #_(query {:apiVersion "zeroci.io/v1"
-  ;;           :ns "default"}
-  ;;          :builds "test-1")
-
-
-
-  (require '[clj-yaml.core :as yaml])
-
-  (spit "/tmp/pods.yaml"
-        (yaml/generate-string
-         (query {:prefix "api"
-                 :ns "pg3"
-                 :apiVersion "v1"}
-                :pods)))
-
-  (spit "/tmp/pods.yaml"
-        (yaml/generate-string
-         (query {:prefix "api"
-                 :ns "pg3"
-                 :apiVersion "v1"}
-                :persistentvolumes)))
-  )
-(defn query [cfg & pth]
-  (println  (apply resource-url cfg pth))
-  (let [res @(http-client/get
-              (apply resource-url cfg pth)
-              {:headers (merge default-headers {"Content-Type" "application/json"})
-               :insecure? true})]
-    (-> res
-     :body
-     (json/parse-string keyword)
-     (resolve-secrets))))
-
-(first (:items (query {:apiVersion "v1" :kind "PersistentVolumeClaim"})))
 
 (defn list [cfg] (query cfg))
 
@@ -260,7 +136,6 @@
          :insecure? true})
       :body
       (json/parse-string)))
-
 
 (defn *merge
   "merges metadata into one bundle"
@@ -292,77 +167,3 @@
             :headers (merge default-headers {"Content-Type" "application/json-patch+json"})})
          :body))
       (create nres))))
-
-(comment
-  ;; (map :resourceVersion (map :metadata (:items (list cfg :repositories))))
-  ;; (map :metadata)
-
-  ;; (find cfg :repositories "ci3")
-
-  ;; (resolve-secrets {:tar{:foo {:valueFrom {:secretKeyRef {:name "ci3" :key "bbKey"}}}}})
-  ;; (resolve-secrets (find cfg :repositories "ci3"))
-
-  ;; (patch cfg :repositories "ci3-chart" {:webhook nil})
-
-  ;; (secret "ci3" :mySecret)
-  ;; (secret "secrets" :github_token)
-
-  ;; (secret "bitbucket" :oauthConsumerSecret)
-
-  ;; (find cfg :builds "ci3-build-6")
-
-  ;; (patch cfg :builds "test-1" {:status "changed"})
-
-  ;; (delete cfg :repositories "ci3")
-
-
-  ;; (curl {} "api/v1/namespaces/default/pods/aitem-hook-test-d40a2375646990b2dec75e80cf97ce5a8a77a199/log")
-
-  ;; (create cfg :builds
-  ;;         {:kind "Build"
-  ;;          :apiVersion "ci3.io/v1"
-  ;;          :metadata {:name "test-00"}})
-  ;; (-> @(http-client/get
-  ;;       (url cfg (str "api/v1/namespaces/default/pods"))
-  ;;       {:insecure? true
-  ;;        :headers (merge default-headers {"Content-Type" "application/json"})})
-  ;;     :body
-  ;;     (json/parse-string))
-
-  ;; #_(query {:apiVersion "zeroci.io/v1"
-  ;;           :ns "default"}
-  ;;          :builds "test-1")
-
-  ;; #_(query {:apiVersion "zeroci.io/v1"
-  ;;           :ns "default"}
-  ;;          :builds "test-1")
-
-
-
-  (require '[clj-yaml.core :as yaml])
-
-  (spit "/tmp/pods.yaml"
-        (yaml/generate-string
-         (query {:prefix "api"
-                 :ns "pg3"
-                 :apiVersion "v1"}
-                :pods)))
-
-  (spit "/tmp/pods.yaml"
-        (yaml/generate-string
-         (query {:prefix "api"
-                 :ns "pg3"
-                 :apiVersion "v1"}
-                :persistentvolumes)))
-  
-  (clojure.pprint/pprint
-   (query {:kind "Pod"
-           :ns "pg3"
-           :apiVersion "v1"}))
-
-  (clojure.pprint/pprint
-   (delete {:kind "Pod"
-            :ns "pg3"
-            :metadata {:name "aidboxdb"}
-            :apiVersion "v1"}))
-  )
