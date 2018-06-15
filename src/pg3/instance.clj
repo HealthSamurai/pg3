@@ -6,6 +6,7 @@
             [pg3.model :as model]
             [cheshire.core :as json]
             [pg3.utils :as ut]
+            [pg3.fsm :as fsm]
             [unifn.core :as u]))
 
 (defn update-status [inst status]
@@ -26,22 +27,17 @@
       res
       (k8s/patch spec))))
 
-(defn init-instance-volumes [inst]
+(defmethod u/*fn ::init-instance-volumes [{inst :resource}]
   (let [data-v (persistent-volume-claim-patch (model/instance-data-volume-spec inst))
         wals-v (persistent-volume-claim-patch (model/instance-wals-volume-spec inst))]
     (if (every? persistent-volume-claim? [data-v wals-v])
-      (do
-        (update-status inst {:volumes [data-v wals-v]
-                             :phase "waiting-volumes"})
-        {:status :ok
-         :text "Instance volumes requested"})
+      {::u/status :success
+       :volumes [data-v wals-v]
+       ::u/message "Instance volumes requested"}
+      {::u/status :error
+       ::u/message (str "Instance volumes request error: " data-v wals-v)})))
 
-      (do
-        (update-status inst {:phase "persistent-volume-request-error"})
-        {:status :error
-         :text (str "Instance volumes request error: " data-v wals-v)}))))
-
-(defn volumes-ready? [inst]
+(defmethod u/*fn ::volumes-ready? [{inst :resource}]
   (let [vols (get-in inst [:status :volumes])
         ready? (reduce
                 (fn [acc v]
@@ -52,17 +48,11 @@
                     (println "PVC STATUS:" (get-in pvc [:status :phase]))
                     (and acc (= "Bound" (get-in pvc [:status :phase])))))
                 true vols)]
-    (when ready?
-      (update-status inst {:phase "waiting-init"}))
-    {:status :ok
-     :text (if ready? "Instance volumes ready" "Waiting instance volumes")}))
-
-
-(defn instance-status [inst]
-  (println "DEFAULT: "
-           (get-in inst [:metadata :name])
-           " "
-           (get-in inst [:status :phase])))
+    (if ready?
+      {::u/status :success
+       ::u/message "Instance volumes ready"}
+      ;; TODO: maybe add one more status for sending telegram message
+      {::u/status :pending})))
 
 (defn find-resource [kind ns res-name]
   (k8s/find {:kind kind
@@ -79,58 +69,49 @@
     (when-not (and (= (:code res) 404) (= (:kind res) "Status"))
       res)))
 
-(defn init-instance [inst]
-  (if (= "master" (get-in inst [:spec :role]))
-    ;; TODO check status
-    (if-let [pod (find-initdb-pod inst)]
-      (do
-        (update-status inst {:phase "waiting-master-initdb"
-                             :initdbPod (get-in pod [:metadata :name])})
-        {:status :ok
-         :text "Master already exists"})
-      (let [pod (model/initdb-pod inst)
-            res (k8s/create pod)]
-        (->  (yaml/generate-string res)
-             (println))
-        (update-status inst {:phase "waiting-master-initdb"
-                             :initdbPod (get-in pod [:metadata :name])})
-        {:status :ok
-         :text "Master initialize started"}))
-    (do 
-      (update-status inst {:phase "replica-not-implemented"})
-      {:status :ok
-       :text "Replica not implemented"})))
+(defmethod u/*fn ::init-master-instance [{inst :resource}]
+  ;; TODO check status
+  (if-let [pod (find-initdb-pod inst)]
+    {::u/status :success
+     ::u/message "Master already exists"
+     :initdbPod (get-in pod [:metadata :name])}
+    (let [pod (model/initdb-pod inst)
+          res (k8s/create pod)]
+      (->  (yaml/generate-string res)
+           (println))
+      {::u/status :success
+       ::u/message "Master initialize started"
+       :initdbPod (get-in pod [:metadata :name])})))
 
-(defn master-inited? [inst]
+(defmethod u/*fn ::init-replica-instance [_]
+  {::u/status :success
+   ::u/message "Replica not implemented"})
+
+(defmethod u/*fn ::master-inited? [{inst :resource}]
   (let [pod (find-initdb-pod inst)
         phase (get-in pod [:status :phase])]
     (cond
       (= "Succeeded" phase)
-      (do
-        (update-status inst {:phase "master-ready-to-start"})
-        {:status :ok
-         :text "Master ready to start"})
+      {::u/status :success
+       ::u/message "Master ready to start"}
 
       (#{"Pending" "Running"} phase)
-      {:status :pending}
+      {::u/status :pending}
 
       :else
       (do
         (println "Init Db Pod is not success: " pod)
-        {:status :error
-         :text (str "Init db fail: " (get-in pod [:metadata :name]))}))))
+        {::u/status :error
+         ::u/message (str "Init db fail: " (get-in pod [:metadata :name]))}))))
 
-(defn start-master [inst]
+(defmethod u/*fn ::start-master [{inst :resource}]
   (println "Start master" inst)
   (let [depl-spec (model/master-deployment inst)
         depl (k8s/patch depl-spec)]
-    (-> (update-status inst {:phase "master-starting"})
-        yaml/generate-string
-        println)
-    {:status :ok
-     :text "Master starting"}))
+    {::u/status :success
+     ::u/message "Master starting"}))
 
-(defn master-starting [inst]
+(defmethod u/*fn ::master-starting [{inst :resource}]
   (println "master started?" inst)
   (let [deployment-spec (model/master-service inst)
         deployment (k8s/find deployment-spec)
@@ -138,20 +119,59 @@
     (if ready?
       (let [service-spec (model/master-service inst)
             service (k8s/patch service-spec)]
-
         (-> service
             yaml/generate-string
             println)
+        {::u/status :success
+         ::u/message "Master service created. Master started"})
+      {::u/status :error
+       ::u/message (str "Some condition in deployment is not true: " (get-in deployment [:metadata :name]))})))
 
-        (-> (update-status inst {:phase "active"})
-            yaml/generate-string
-            println)
-        {:status :ok
-         :text "Master service created. Master started"})
-      {:status :error
-       :text (str "Some condition in deployment is not true: " (get-in deployment [:metadata :name]))})))
+(def fsm-base
+  {:init {:action-stack [::init-instance-volumes]
+          :success :waiting-volumes
+          :error :error-state}
 
-(defn watch-instance [{st :status :as inst}]
+   :waiting-volumes {:action-stack [::volumes-ready?]
+                     :success :waiting-init
+                     :error :error-state}
+
+   ;; TODO: make error handling
+   :error-state {}})
+
+(def fsm-master
+  (merge
+   fsm-base
+   {:waiting-init {:action-stack [::init-master-instance]
+                   :success :waiting-master-initdb
+                   :error :error-state}
+
+    :waiting-master-initdb {:action-stack [::master-inited?]
+                            :success :master-ready-to-start
+                            :error :error-state}
+
+    :master-ready-to-start {:action-stack [::start-master]
+                            :success :master-starting
+                            :error :error-state}
+
+    :master-starting {:action-stack [::start-master]
+                      :success :active
+                      :error :error-state}
+
+    :active {}}))
+
+(def fsm-replica
+  (merge
+   fsm-base
+   {:waiting-init {:action-stack [::init-replica-instance]
+                   :success :replicat-not-implemented
+                   :error :error-state}
+
+    :replicat-not-implemented {}}))
+
+;; if status :ok then update-status with returned data and go to next step
+
+#_(defn watch-instance [{st :status :as inst}]
   (cond
     (or (nil? st) (= (:phase st) "init-volumes"))
     (ut/exec-phase "init-volumes" init-instance-volumes inst)
@@ -176,7 +196,8 @@
 
 (defn watch-instances []
   (doseq [inst (:items (k8s/query {:kind naming/instance-resource-kind :apiVersion naming/api}))]
-    (watch-instance inst)))
+    (let [fsm* (if (= "master" (get-in inst [:spec :role])) fsm-master fsm-replica)]
+      (fsm/process-state fsm* inst))))
 
 
 (comment
