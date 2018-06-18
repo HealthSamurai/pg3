@@ -19,12 +19,6 @@
 (defn url [pth]
   (str kube-url "/" pth))
 
-(defn curl [pth]
-  (let [res @(http-client/get
-              (url pth)
-              {:headers default-headers :insecure? true})]
-    (-> res :body)))
-
 (defn base64-decode [s]
   (if s
     (String. (.decode (Base64/getDecoder) s))
@@ -101,7 +95,7 @@
           {:headers (merge default-headers {"Content-Type" "application/json"})
            :insecure? true})
         :body
-        (json/parse-string))))
+        (json/parse-string keyword))))
 
 ;; ReplicationController, ReplicaSet, StatefulSet, DaemonSet, and Deployment
 
@@ -127,7 +121,7 @@
            :insecure? true
            :headers (merge default-headers {"Content-Type" "application/json"})})
         :body
-        (json/parse-string))))
+        (json/parse-string keyword))))
 
 (defn delete [res]
   (-> @(http-client/delete
@@ -135,7 +129,7 @@
         {:headers (merge default-headers {"Content-Type" "application/json"})
          :insecure? true})
       :body
-      (json/parse-string)))
+      (json/parse-string keyword)))
 
 (defn *merge
   "merges metadata into one bundle"
@@ -165,5 +159,6 @@
            {:body (json/generate-string diff)
             :insecure? true
             :headers (merge default-headers {"Content-Type" "application/json-patch+json"})})
-         :body))
+         :body
+         (json/parse-string keyword)))
       (create nres))))

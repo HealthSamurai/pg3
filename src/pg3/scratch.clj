@@ -2,12 +2,19 @@
   (:require [k8s.core :as k8s]
             [pg3.model :as m]
             [pg3.cluster :as cluster]
-            [pg3.instance :as instance]))
+            [pg3.instance :as instance]
+            [pg3.naming :as naming]))
+
+(defn update-status [inst status]
+  (k8s/patch
+   (assoc inst
+          :kind naming/instance-resource-kind
+          :apiVersion naming/api
+          :status (merge (or (:status inst) {})
+                         {:lastUpdate (java.util.Date.)}
+                         status))))
 
 (comment
-  (k8s/create m/cluster-definition)
-  (k8s/create m/instance-definition)
-
   (def perseus-cluster
     {:kind "PgCluster"
      :ns "pg3"
@@ -25,18 +32,18 @@
   (cluster/watch-clusters)
   (instance/watch-instances)
 
-  (def instance-name "pg3-perseus-lightcoral")
+  (def instance-name "pg3-perseus-rebeccapurple")
   
-  (instance/update-status (k8s/find {:kind "PgInstance"
-                                     :apiVersion "pg3.io/v1"
-                                     :metadata {:namespace "pg3"
-                                                :name instance-name}})
-                          {:phase "init-volumes"})
-  (instance/update-status (k8s/find {:kind "PgInstance"
-                                     :apiVersion "pg3.io/v1"
-                                     :metadata {:namespace "pg3"
-                                                :name instance-name}})
-                          {:phase "active"})
+  (update-status (k8s/find {:kind "PgInstance"
+                            :apiVersion "pg3.io/v1"
+                            :metadata {:namespace "pg3"
+                                       :name instance-name}})
+                 {:phase "waiting-replica-init"})
+  (update-status (k8s/find {:kind "PgInstance"
+                            :apiVersion "pg3.io/v1"
+                            :metadata {:namespace "pg3"
+                                       :name instance-name}})
+                 {:phase "active"})
   )
 
 (comment

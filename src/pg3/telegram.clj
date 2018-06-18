@@ -44,16 +44,24 @@
     (p/stop @channel)
     (reset! channel nil)))
 
+(defn prepare-text [text]
+  (if (or (str/includes? text "_") (str/includes? text "*"))
+    (str " with ```" text "```")
+    (str " with _" text "_")))
+
 (defn make-message [phase text res]
   (let [kind (:kind res)
         res-name (get-in res [:metadata :name])]
-    (format "Resource *%s*:*%s* finish phase *%s*%s" kind res-name phase (if text (format " with _%s_" text) ""))))
+    (format "Resource *%s*:*%s* finish phase *%s*%s"
+            kind res-name phase
+            (if text (prepare-text text) ""))))
 
 (def okEmoji (apply str (Character/toChars 9989)))
 (def noEmoji (apply str (Character/toChars 10060)))
 
 (defn notify* [emoji phase text res]
   (let [msg (str emoji (make-message phase text res))]
+    (println "telegram: " msg)
     (notify msg)))
 
 (def error (partial notify* noEmoji))

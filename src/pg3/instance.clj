@@ -9,28 +9,19 @@
             [pg3.fsm :as fsm]
             [unifn.core :as u]))
 
-(defn update-status [inst status]
-  (k8s/patch
-   (assoc inst
-          :kind naming/instance-resource-kind
-          :apiVersion naming/api
-          :status (merge (or (:status inst) {})
-                         {:lastUpdate (java.util.Date.)}
-                         status))))
+(defn pvc? [res]
+  (and (map? res) (= (:kind res) "PersistentVolumeClaim")))
 
-(defn persistent-volume-claim? [res]
-  (and (map? res) (= (or (:kind res) (get res "kind")) "PersistentVolumeClaim")))
-
-(defn persistent-volume-claim-patch [spec]
+(defn pvc-patch [spec]
   (let [res (k8s/find spec)]
-    (if (persistent-volume-claim? res)
+    (if (pvc? res)
       res
       (k8s/patch spec))))
 
 (defmethod u/*fn ::init-instance-volumes [{inst :resource}]
-  (let [data-v (persistent-volume-claim-patch (model/instance-data-volume-spec inst))
-        wals-v (persistent-volume-claim-patch (model/instance-wals-volume-spec inst))]
-    (if (every? persistent-volume-claim? [data-v wals-v])
+  (let [data-v (pvc-patch (model/instance-data-volume-spec inst))
+        wals-v (pvc-patch (model/instance-wals-volume-spec inst))]
+    (if (every? pvc? [data-v wals-v])
       {::u/status :success
        :volumes [data-v wals-v]
        ::u/message "Instance volumes requested"}
@@ -102,12 +93,12 @@
 
 (defmethod u/*fn ::start-master [{inst :resource}]
   (println "Start master" inst)
-  (let [depl-spec (model/master-deployment inst)
+  (let [depl-spec (model/postgres-deployment inst)
         depl (k8s/patch depl-spec)]
     {::u/status :success
      ::u/message "Master starting"}))
 
-(defmethod u/*fn ::is-master-started [{inst :resource}]
+(defmethod u/*fn ::master-started? [{inst :resource}]
   (println "master started?" inst)
   (let [deployment-spec (model/master-service inst)
         deployment (k8s/find deployment-spec)
@@ -150,7 +141,7 @@
                             :success :master-starting
                             :error :error-state}
 
-    :master-starting {:action-stack [::is-master-started]
+    :master-starting {:action-stack [::master-started?]
                       :success :active
                       :error :error-state}
 
@@ -192,6 +183,46 @@
        ::u/message "Replica initialize started"
        :status-data {:initReplicaPod (get-in pod [:metadata :name])}})))
 
+(defmethod u/*fn ::replica-inited? [{inst :resource}]
+  (let [pod (find-init-replica-pod inst)
+        phase (get-in pod [:status :phase])]
+    (cond
+      (= "Succeeded" phase)
+      {::u/status :success
+       ::u/message "Replica ready to start"}
+
+      (#{"Pending" "Running"} phase)
+      {::u/status :pending}
+
+      :else
+      (do
+        (println "Init Replica Pod is not success: " pod)
+        {::u/status :error
+         ::u/message (str "Init Replica fail: " (get-in pod [:metadata :name]))}))))
+
+(defmethod u/*fn ::start-replica [{inst :resource}]
+  (println "Start replica" inst)
+  (let [depl-spec (model/postgres-deployment inst)
+        depl (k8s/patch depl-spec)]
+    {::u/status :success
+     ::u/message "Replica starting"}))
+
+(defmethod u/*fn ::replica-started? [{inst :resource}]
+  (println "master started?" inst)
+  (let [deployment-spec (model/replica-service inst)
+        deployment (k8s/find deployment-spec)
+        ready? (every? (partial = "True") (map :status (get-in deployment [:status :conditions])))]
+    (if ready?
+      (let [service-spec (model/replica-service inst)
+            service (k8s/patch service-spec)]
+        (-> service
+            yaml/generate-string
+            println)
+        {::u/status :success
+         ::u/message "Replica service created. Replica started"})
+      {::u/status :error
+       ::u/message (str "Some condition in deployment is not true: " (get-in deployment [:metadata :name]))})))
+
 (def fsm-replica
   (merge
    fsm-base
@@ -200,12 +231,15 @@
                    :success :init-replica-instance
                    :error :error-state}
     :init-replica-instance {:action-stack [::init-replica-instance]
-                            :success :active #_:waiting-replica-initdb
+                            :success :waiting-replica-init
                             :error :error-state}
-    :waiting-replica-initdb {:action-stack [::replica-inited?]
-                             :success :replica-starting
-                             :error :error-state}
-    :replica-starting {:action-stack [::is-master-started]
+    :waiting-replica-init {:action-stack [::replica-inited?]
+                             :success :replica-ready-to-start
+                           :error :error-state}
+    :replica-ready-to-start {:action-stack [::start-replica]
+                            :success :replica-starting
+                            :error :error-state}
+    :replica-starting {:action-stack [::replica-started?]
                        :success :active
                        :error :error-state}
     :active {}}))

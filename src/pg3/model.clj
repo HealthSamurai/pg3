@@ -246,28 +246,17 @@ host  replication postgres 0.0.0.0/0 md5
 
 
 ;; TODO liveness https://github.com/kubernetes/kubernetes/issues/7891
-(defn master-pod [inst-spec opts]
+(defn postgres-pod [inst-spec opts]
   (db-pod inst-spec
           (merge opts {:command
                        ["gosu", "postgres", "postgres",
                         (str "--config-file=" naming/config-path "/postgresql.conf")
                         (str "--hba-file=" naming/config-path "/pg_hba.conf")]})))
 
-(defn master-deployment [inst-spec]
-  (let [pod (master-pod inst-spec
+(defn postgres-deployment [inst-spec]
+  (let [pod (postgres-pod inst-spec
                         {:name (str "pg3-" (get-in inst-spec [:spec :pg-cluster])
                                     "-" (get-in inst-spec [:metadata :labels :color]))})]
-    {:apiVersion "apps/v1beta1"
-     :kind "Deployment"
-     :metadata (:metadata pod)
-     :spec {:replicas 1
-            :template (update pod :metadata dissoc :name)}}))
-
-(defn replica-deployment [cluster inst-spec]
-  (let [pod (master-pod cluster inst-spec
-                        {:name (str "pg3-" (get-in cluster [:metadata :name])
-                                    "-" (get-in inst-spec [:metadata :labels :color])
-                                    )})]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
      :metadata (:metadata pod)
@@ -287,14 +276,15 @@ host  replication postgres 0.0.0.0/0 md5
                      :port 5432
                      :targetPort 5432}]}}))
 
-(defn slave-service [cluster inst-spec]
-  (let [clr (get-in inst-spec [:metadata :labels :color])]
+(defn replica-service [inst-spec]
+  (let [clr (get-in inst-spec [:metadata :labels :color])
+        cluster-name (get-in inst-spec [:spec :pg-cluster])]
     {:apiVersion "v1"
      :kind "Service"
      :metadata {:name (naming/replica-service-name inst-spec)
                 :namespace (inherited-namespace inst-spec)
                 :labels  (inherited-labels inst-spec)}
-     :spec {:selector (naming/replica-service-selector cluster clr)
+     :spec {:selector (naming/replica-service-selector cluster-name clr)
             :type "ClusterIP"
             :ports [{:protocol "TCP"
                      :port 5432

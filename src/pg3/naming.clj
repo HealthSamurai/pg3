@@ -69,7 +69,7 @@
 (defn replica-service-name [inst-spec]
   (resource-name inst-spec))
 
-(defn replica-service-selector [cluster clr]
-  {:service (cluster-name cluster)
+(defn replica-service-selector [cluster-name clr]
+  {:service (service-name cluster-name)
    :color clr
    :pgrole "replica"})
