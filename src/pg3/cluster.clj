@@ -15,16 +15,21 @@
 ;; watch status of clusters
 ;; based on instances state
 
-(defmethod u/*fn ::find-master-instance [{cluster :resource}]
-  {::master (first (ut/my-pginstances cluster))})
-
-(defmethod u/*fn ::find-replica-instance [{cluster :resource}]
-  {::replica (second (ut/my-pginstances cluster))})
+(defmethod u/*fn ::load-instances [{cluster :resource}]
+  {::instances (ut/my-pginstances cluster)})
 
 (defmethod u/*fn ::load-random-colors [arg]
   (let [colors (take 2 (shuffle naming/colors))]
-    {::master-color (first colors)
-     ::replica-color (second colors)}))
+    {::colors {:master (first colors)
+               :replica (second colors)}}))
+
+#_(defmethod u/*fn :k8s/patch [{path :k8s/path :as arg}]
+  (let [result (k8s/patch (get-in arg path))]
+    (when (= (:kind result) "Status")
+      {::u/status :error
+       ::u/message (str result)})))
+
+#_(defmethod u/*fn :k8s/create [{path :k8s/path :as arg}])
 
 (defn strict-patch [resource]
   (let [result (k8s/patch resource)]
@@ -38,17 +43,11 @@
 (defmethod u/*fn ::ensure-cluster-secret [{cluster :resource}]
   (strict-patch (model/secret cluster)))
 
-(defmethod u/*fn ::ensure-master [{master ::master
-                                   cluster :resource
-                                   color ::master-color}]
-  (let [master (or master (model/instance-spec cluster color "master"))]
-    (strict-patch master)))
-
-(defmethod u/*fn ::ensure-replica [{replica ::replica
-                                   cluster :resource
-                                   color ::replica-color}]
-  (let [replica (or replica (model/instance-spec cluster color "replica"))]
-    (strict-patch replica)))
+(defmethod u/*fn ::ensure-instance [{role ::role cluster :resource :as arg}]
+  (let [instance (get-in arg [::instances role])
+        color (get-in arg [::colors role])
+        instance (or instance (model/instance-spec cluster color (name role)))]
+    (strict-patch instance)))
 
 (defmethod u/*fn ::finish-init [arg]
   {::u/status :success
@@ -57,11 +56,10 @@
 (def fsm-pg-cluster
   {:init {:action-stack [::ensure-cluster-config
                          ::ensure-cluster-secret
-                         ::find-master-instance
-                         ::find-replica-instance
+                         ::load-instances
                          ::load-random-colors
-                         ::ensure-master
-                         ::ensure-replica
+                         {::u/fn ::ensure-instance ::role :master}
+                         {::u/fn ::ensure-instance ::role :replica}
                          ::finish-init]
           :success :active
           :error :error-state}

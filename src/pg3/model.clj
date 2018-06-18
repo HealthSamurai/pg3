@@ -216,7 +216,7 @@ host  replication postgres 0.0.0.0/0 md5
             :command (:command opts)
             :volumeMounts (volume-mounts inst-spec)}]}})
 
-(defn initdb-pod [inst-spec]
+(defn init-master-pod [inst-spec]
   (db-pod inst-spec
           {:name (str (get-in inst-spec [:metadata :name]) "-initdb")
            :restartPolicy "Never"

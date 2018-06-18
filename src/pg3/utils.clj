@@ -11,5 +11,5 @@
                                         :apiVersion naming/api}
                                        {:labelSelector
                                         (format "service in (%s)" (naming/cluster-name cluster))}))]
-    [(find-pginstance-by-role pginstances "master")
-     (find-pginstance-by-role pginstances "replica")]))
+    {:master (find-pginstance-by-role pginstances "master")
+     :replica (find-pginstance-by-role pginstances "replica")}))

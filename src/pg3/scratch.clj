@@ -29,6 +29,7 @@
      :config {:config {:shared_buffers "1GB"
                        :max_connections 100}}})
   (k8s/create perseus-cluster)
+
   (cluster/watch-clusters)
   (instance/watch-instances)
 

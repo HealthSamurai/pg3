@@ -51,68 +51,77 @@
              :metadata {:name res-name
                         :namespace ns}}))
 
-(defn find-initdb-pod [inst]
-  (let [pod-name (or (get-in inst [:status :initdbPod])
-                     (get-in (model/initdb-pod inst) [:metadata :name]))
+(defn find-init-pod [inst init-pod-fn]
+  (let [pod-name (or (get-in inst [:status :initPod])
+                     (get-in (init-pod-fn inst) [:metadata :name]))
         ns (get-in inst [:metadata :namespace])
         res (find-resource "Pod" ns pod-name)]
-    (println  "find-initdb-pod" res)
     (when-not (and (= (:code res) 404) (= (:kind res) "Status"))
       res)))
 
-(defmethod u/*fn ::init-master-instance [{inst :resource}]
-  ;; TODO check status
-  (if-let [pod (find-initdb-pod inst)]
-    {::u/status :success
-     ::u/message "Master already exists"
-     :initdbPod (get-in pod [:metadata :name])}
-    (let [pod (model/initdb-pod inst)
-          res (k8s/create pod)]
-      (->  (yaml/generate-string res)
-           (println))
-      {::u/status :success
-       ::u/message "Master initialize started"
-       :status-data {:initdbPod (get-in pod [:metadata :name])}})))
+(defn instance-role [inst]
+  (str/capitalize (get-in inst [:spec :role])))
 
-(defmethod u/*fn ::master-inited? [{inst :resource}]
-  (let [pod (find-initdb-pod inst)
-        phase (get-in pod [:status :phase])]
+(defmethod u/*fn ::init-instance [{instance :resource
+                                   init-pod-fn ::init-pod-fn}]
+  (let [role (instance-role instance)]
+    (if-let [pod (find-init-pod instance init-pod-fn)]
+      {::u/status :success
+       ::u/message (str role " already exists")
+       :initPod (get-in pod [:metadata :name])}
+      (let [pod (init-pod-fn instance)
+            res (k8s/create pod)]
+        (if (= (:kind res) "Status")
+          {::u/status :error
+           ::u/message (str res)}
+          {::u/status :success
+           ::u/message (str role " initialize started")
+           :status-data {:initPod (get-in pod [:metadata :name])}})))))
+
+(defmethod u/*fn ::instance-inited? [{inst :resource
+                                      init-pod-fn ::init-pod-fn}]
+  (let [pod (find-init-pod inst init-pod-fn)
+        phase (get-in pod [:status :phase])
+        role (instance-role inst)]
     (cond
       (= "Succeeded" phase)
       {::u/status :success
-       ::u/message "Master ready to start"}
+       ::u/message (str role " ready to start")}
 
       (#{"Pending" "Running"} phase)
       {::u/status :pending}
 
       :else
-      (do
-        (println "Init Db Pod is not success: " pod)
-        {::u/status :error
-         ::u/message (str "Init db fail: " (get-in pod [:metadata :name]))}))))
-
-(defmethod u/*fn ::start-master [{inst :resource}]
-  (println "Start master" inst)
-  (let [depl-spec (model/postgres-deployment inst)
-        depl (k8s/patch depl-spec)]
-    {::u/status :success
-     ::u/message "Master starting"}))
-
-(defmethod u/*fn ::master-started? [{inst :resource}]
-  (println "master started?" inst)
-  (let [deployment-spec (model/master-service inst)
-        deployment (k8s/find deployment-spec)
-        ready? (every? (partial = "True") (map :status (get-in deployment [:status :conditions])))]
-    (if ready?
-      (let [service-spec (model/master-service inst)
-            service (k8s/patch service-spec)]
-        (-> service
-            yaml/generate-string
-            println)
-        {::u/status :success
-         ::u/message "Master service created. Master started"})
       {::u/status :error
-       ::u/message (str "Some condition in deployment is not true: " (get-in deployment [:metadata :name]))})))
+       ::u/message (str role " init fail: " (get-in pod [:metadata :name]))})))
+
+(defmethod u/*fn ::start-instance [{inst :resource}]
+  (let [role (instance-role inst)
+        res (k8s/patch (model/postgres-deployment inst))]
+    (if (= (:kind res) "Status")
+      {::u/status :error
+       ::u/message (str res)}
+      {::u/status :success
+       ::u/message (str role " starting")})))
+
+(defn deployment-success? [deployment]
+  (every? (partial = "True") (map :status (get-in deployment [:status :conditions]))))
+
+(defmethod u/*fn ::instance-started? [{inst :resource}]
+  (let [deployment (k8s/find (model/postgres-deployment inst))]
+    (when-not (deployment-success? deployment)
+      {::u/status :error
+       ::u/message (str "Postgres deployment fail: " (get-in deployment [:metadata :name]))})))
+
+(defmethod u/*fn ::start-instance-service [{inst :resource
+                                            service-fn ::service-fn}]
+  (let [role (instance-role inst)
+        res (k8s/patch (service-fn inst))]
+    (if (= (:kind res) "Status")
+      {::u/status :error
+       ::u/message (str res)}
+      {::u/status :success
+       ::u/message (format "%s service created. %s started" role role)})))
 
 (def fsm-base
   {:init {:action-stack [::init-instance-volumes]
@@ -129,19 +138,23 @@
 (def fsm-master
   (merge
    fsm-base
-   {:waiting-init {:action-stack [::init-master-instance]
-                   :success :waiting-master-initdb
+   {:waiting-init {:action-stack [{::u/fn ::init-instance
+                                   ::init-pod-fn model/init-master-pod}]
+                   :success :waiting-master-init-pod
                    :error :error-state}
 
-    :waiting-master-initdb {:action-stack [::master-inited?]
-                            :success :master-ready-to-start
-                            :error :error-state}
+    :waiting-master-init-pod {:action-stack [{::u/fn ::instance-inited?
+                                              ::init-pod-fn model/init-master-pod}]
+                              :success :master-ready-to-start
+                              :error :error-state}
 
-    :master-ready-to-start {:action-stack [::start-master]
+    :master-ready-to-start {:action-stack [::start-instance]
                             :success :master-starting
                             :error :error-state}
 
-    :master-starting {:action-stack [::master-started?]
+    :master-starting {:action-stack [::instance-inited?
+                                     {::u/fn ::start-instance-service
+                                      ::service-fn model/master-service}]
                       :success :active
                       :error :error-state}
 
@@ -152,7 +165,7 @@
         ns (get-in replica [:metadata :namespace])
         cluster {:metadata {:namespace ns
                             :name cluster-name}}
-        master (ut/find-pginstance-by-role (ut/my-pginstances cluster) "master")]
+        master (:master (ut/my-pginstances cluster))]
     {::master master}))
 
 (defmethod u/*fn ::wait-master [{master ::master}]
@@ -161,68 +174,6 @@
      ::u/message "Master was started"}
     {::u/status :pending}))
 
-(defn find-init-replica-pod [inst]
-  (let [pod-name (or (get-in inst [:status :initReplicaPod])
-                     (get-in (model/init-replica-pod inst) [:metadata :name]))
-        ns (get-in inst [:metadata :namespace])
-        res (find-resource "Pod" ns pod-name)]
-    (println  "find-init-replica-pod" res)
-    (when-not (and (= (:code res) 404) (= (:kind res) "Status"))
-      res)))
-
-(defmethod u/*fn ::init-replica-instance [{replica :resource}]
-  (if-let [pod (find-init-replica-pod replica)]
-    {::u/status :success
-     ::u/message "Replica already exists"
-     :initdbPod (get-in pod [:metadata :name])}
-    (let [pod (model/init-replica-pod replica)
-          res (k8s/create pod)]
-      (->  (yaml/generate-string res)
-           (println))
-      {::u/status :success
-       ::u/message "Replica initialize started"
-       :status-data {:initReplicaPod (get-in pod [:metadata :name])}})))
-
-(defmethod u/*fn ::replica-inited? [{inst :resource}]
-  (let [pod (find-init-replica-pod inst)
-        phase (get-in pod [:status :phase])]
-    (cond
-      (= "Succeeded" phase)
-      {::u/status :success
-       ::u/message "Replica ready to start"}
-
-      (#{"Pending" "Running"} phase)
-      {::u/status :pending}
-
-      :else
-      (do
-        (println "Init Replica Pod is not success: " pod)
-        {::u/status :error
-         ::u/message (str "Init Replica fail: " (get-in pod [:metadata :name]))}))))
-
-(defmethod u/*fn ::start-replica [{inst :resource}]
-  (println "Start replica" inst)
-  (let [depl-spec (model/postgres-deployment inst)
-        depl (k8s/patch depl-spec)]
-    {::u/status :success
-     ::u/message "Replica starting"}))
-
-(defmethod u/*fn ::replica-started? [{inst :resource}]
-  (println "master started?" inst)
-  (let [deployment-spec (model/replica-service inst)
-        deployment (k8s/find deployment-spec)
-        ready? (every? (partial = "True") (map :status (get-in deployment [:status :conditions])))]
-    (if ready?
-      (let [service-spec (model/replica-service inst)
-            service (k8s/patch service-spec)]
-        (-> service
-            yaml/generate-string
-            println)
-        {::u/status :success
-         ::u/message "Replica service created. Replica started"})
-      {::u/status :error
-       ::u/message (str "Some condition in deployment is not true: " (get-in deployment [:metadata :name]))})))
-
 (def fsm-replica
   (merge
    fsm-base
@@ -230,44 +181,23 @@
                                   ::wait-master]
                    :success :init-replica-instance
                    :error :error-state}
-    :init-replica-instance {:action-stack [::init-replica-instance]
+    :init-replica-instance {:action-stack [{::u/fn ::init-instance
+                                            ::init-pod-fn model/init-replica-pod}]
                             :success :waiting-replica-init
                             :error :error-state}
-    :waiting-replica-init {:action-stack [::replica-inited?]
-                             :success :replica-ready-to-start
+    :waiting-replica-init {:action-stack [{::u/fn ::instance-inited?
+                                           ::init-pod-fn model/init-replica-pod}]
+                           :success :replica-ready-to-start
                            :error :error-state}
-    :replica-ready-to-start {:action-stack [::start-replica]
-                            :success :replica-starting
-                            :error :error-state}
-    :replica-starting {:action-stack [::replica-started?]
+    :replica-ready-to-start {:action-stack [::start-instance]
+                             :success :replica-starting
+                             :error :error-state}
+    :replica-starting {:action-stack [::instance-inited?
+                                      {::u/fn ::start-instance-service
+                                       ::service-fn model/replica-service}]
                        :success :active
                        :error :error-state}
     :active {}}))
-
-;; if status :ok then update-status with returned data and go to next step
-
-#_(defn watch-instance [{st :status :as inst}]
-  (cond
-    (or (nil? st) (= (:phase st) "init-volumes"))
-    (ut/exec-phase "init-volumes" init-instance-volumes inst)
-
-    (= "waiting-volumes" (:phase st))
-    (ut/exec-phase (:phase st) volumes-ready? inst)
-
-    (= "waiting-init" (:phase st))
-    (ut/exec-phase (:phase st) init-instance inst)
-
-    (= "waiting-master-initdb" (:phase st))
-    (ut/exec-phase (:phase st) master-inited? inst)
-
-    (= "master-ready-to-start" (:phase st))
-    (ut/exec-phase (:phase st) start-master inst)
-
-    (= "master-starting" (:phase st))
-    (ut/exec-phase (:phase st) master-starting inst)
-
-    :else
-    (instance-status inst)))
 
 (defn watch-instances []
   (doseq [inst (:items (k8s/query {:kind naming/instance-resource-kind :apiVersion naming/api}))]
