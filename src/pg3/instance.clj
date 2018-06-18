@@ -111,7 +111,7 @@
     {::u/status :success
      ::u/message "Master starting"}))
 
-(defmethod u/*fn ::master-starting [{inst :resource}]
+(defmethod u/*fn ::is-master-started [{inst :resource}]
   (println "master started?" inst)
   (let [deployment-spec (model/master-service inst)
         deployment (k8s/find deployment-spec)
@@ -154,7 +154,7 @@
                             :success :master-starting
                             :error :error-state}
 
-    :master-starting {:action-stack [::start-master]
+    :master-starting {:action-stack [::is-master-started]
                       :success :active
                       :error :error-state}
 

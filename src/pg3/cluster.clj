@@ -5,9 +5,11 @@
             [pg3.naming :as naming]
             [pg3.model :as model]
             [cheshire.core :as json]
-            [pg3.utils :as ut]))
+            [pg3.utils :as ut]
+            [pg3.fsm :as fsm]
+            [unifn.core :as u]))
 
-;; watch new clusters 
+;; watch new clusters
 ;; orchestarate setup
 
 ;; watch status of clusters
@@ -26,58 +28,63 @@
      (find-pginstance-by-role pginstances "replica")]))
 
 
-(defn init-cluster [cluster]
-  (println "INIT cluster: " cluster)
-  (let [[old-master old-replica] (my-pginstances cluster)
-        colors (take 2 (shuffle naming/colors))
-        master (or old-master (model/instance-spec cluster (first colors) "master"))
-        replica (or old-replica (model/instance-spec cluster (second colors) "replica"))]
+(defmethod u/*fn ::find-master-instance [{cluster :resource}]
+  {::master (first (my-pginstances cluster))})
 
+(defmethod u/*fn ::find-replica-instance [{cluster :resource}]
+  {::replica (second (my-pginstances cluster))})
 
-    (println "Create config: "  (k8s/patch (model/config-map cluster)))
-    (println "Create secret: "  (k8s/patch (model/secret cluster)))
-    (println "Create master: "  (k8s/patch master))
-    (println "Create replica: " (k8s/patch replica))
+(defmethod u/*fn ::load-random-colors [arg]
+  (let [colors (take 2 (shuffle naming/colors))]
+    {::master-color (first colors)
+     ::replica-color (second colors)}))
 
-    (println "Update cluster state: "
-             (k8s/patch (assoc cluster
-                               :kind naming/cluster-resource-kind
-                               :apiVersion naming/api
-                               :status {:phase "init"
-                                        :ts (java.util.Date.)})))
-    {:status :ok
-     :text "Cluster initialized"}))
+(defn strict-patch [resource]
+  (let [result (k8s/patch resource)]
+    (when (= (:kind result) "Status")
+      {::u/status :error
+       ::u/message (str result)})))
 
-(defn inited-cluster? [cluster]
-  (println "INITITED cluster: " cluster))
+(defmethod u/*fn ::ensure-cluster-config [{cluster :resource}]
+  (strict-patch (model/config-map cluster)))
 
-(defn cluster-status [cluster]
-  (println "Status cluster: [" (:status cluster) "]" cluster)
+(defmethod u/*fn ::ensure-cluster-secret [{cluster :resource}]
+  (strict-patch (model/secret cluster)))
 
-  (let [instances (my-pginstances cluster)]
-    (k8s/patch (assoc cluster
-                      :kind naming/cluster-resource-kind
-                      :apiVersion naming/api
-                      :status
-                      (merge (or (:status cluster) {})
-                             {:lastUpdate (java.util.Date.)
-                              :instances (reduce
-                                          (fn [acc i]
-                                            (assoc acc (naming/resource-name i) (:status i)))
-                                          {} instances)})))))
+(defmethod u/*fn ::ensure-master [{master ::master
+                                   cluster :resource
+                                   color ::master-color}]
+  (let [master (or master (model/instance-spec cluster color "master"))]
+    (strict-patch master)))
 
-(defn watch-cluster [{status :status :as cluster}]
-  (cond
-    (or (nil? status)
-        (= (:phase status) "reinit")) (ut/exec-phase (or (:phase status) "init") init-cluster cluster)
-    (= "init" (:phase status)) (inited-cluster? cluster)
-    :else (cluster-status cluster)))
+(defmethod u/*fn ::ensure-replica [{replica ::replica
+                                   cluster :resource
+                                   color ::replica-color}]
+  (let [replica (or replica (model/instance-spec cluster color "replica"))]
+    (strict-patch replica)))
+
+(defmethod u/*fn ::finish-init [arg]
+  {::u/status :success
+   ::u/message "Cluster initialized"})
+
+(def fsm-pg-cluster
+  {:init {:action-stack [::ensure-cluster-config
+                         ::ensure-cluster-secret
+                         ::find-master-instance
+                         ::find-replica-instance
+                         ::load-random-colors
+                         ::ensure-master
+                         ::ensure-replica
+                         ::finish-init]
+          :success :active
+          :error :error-state}
+   :active {}
+   :error-state {}})
 
 (defn watch-clusters []
   (doseq [cluster (:items (k8s/query {:kind naming/cluster-resource-kind
                                       :apiVersion naming/api}))]
-    (watch-cluster cluster)))
+    (fsm/process-state fsm-pg-cluster cluster)))
 
 (comment
-  (watch-clusters)
-  )
+  (watch-clusters))
