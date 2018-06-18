@@ -81,11 +81,7 @@
            (println))
       {::u/status :success
        ::u/message "Master initialize started"
-       :initdbPod (get-in pod [:metadata :name])})))
-
-(defmethod u/*fn ::init-replica-instance [_]
-  {::u/status :success
-   ::u/message "Replica not implemented"})
+       :status-data {:initdbPod (get-in pod [:metadata :name])}})))
 
 (defmethod u/*fn ::master-inited? [{inst :resource}]
   (let [pod (find-initdb-pod inst)
@@ -160,14 +156,59 @@
 
     :active {}}))
 
+(defmethod u/*fn ::find-master-instance [{replica :resource}]
+  (let [cluster-name (get-in replica [:spec :pg-cluster])
+        ns (get-in replica [:metadata :namespace])
+        cluster {:metadata {:namespace ns
+                            :name cluster-name}}
+        master (ut/find-pginstance-by-role (ut/my-pginstances cluster) "master")]
+    {::master master}))
+
+(defmethod u/*fn ::wait-master [{master ::master}]
+  (if (= (get-in master [:status :phase]) "active")
+    {::u/status :success
+     ::u/message "Master was started"}
+    {::u/status :pending}))
+
+(defn find-init-replica-pod [inst]
+  (let [pod-name (or (get-in inst [:status :initReplicaPod])
+                     (get-in (model/init-replica-pod inst) [:metadata :name]))
+        ns (get-in inst [:metadata :namespace])
+        res (find-resource "Pod" ns pod-name)]
+    (println  "find-init-replica-pod" res)
+    (when-not (and (= (:code res) 404) (= (:kind res) "Status"))
+      res)))
+
+(defmethod u/*fn ::init-replica-instance [{replica :resource}]
+  (if-let [pod (find-init-replica-pod replica)]
+    {::u/status :success
+     ::u/message "Replica already exists"
+     :initdbPod (get-in pod [:metadata :name])}
+    (let [pod (model/init-replica-pod replica)
+          res (k8s/create pod)]
+      (->  (yaml/generate-string res)
+           (println))
+      {::u/status :success
+       ::u/message "Replica initialize started"
+       :status-data {:initReplicaPod (get-in pod [:metadata :name])}})))
+
 (def fsm-replica
   (merge
    fsm-base
-   {:waiting-init {:action-stack [::init-replica-instance]
-                   :success :replicat-not-implemented
+   {:waiting-init {:action-stack [::find-master-instance
+                                  ::wait-master]
+                   :success :init-replica-instance
                    :error :error-state}
-
-    :replicat-not-implemented {}}))
+    :init-replica-instance {:action-stack [::init-replica-instance]
+                            :success :active #_:waiting-replica-initdb
+                            :error :error-state}
+    :waiting-replica-initdb {:action-stack [::replica-inited?]
+                             :success :replica-starting
+                             :error :error-state}
+    :replica-starting {:action-stack [::is-master-started]
+                       :success :active
+                       :error :error-state}
+    :active {}}))
 
 ;; if status :ok then update-status with returned data and go to next step
 

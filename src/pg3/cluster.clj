@@ -15,24 +15,11 @@
 ;; watch status of clusters
 ;; based on instances state
 
-(defn find-pginstance-by-role [instances role]
-  (first (filter #(= role (get-in % [:spec :role])) instances)))
-
-(defn my-pginstances [cluster]
-  (let [pginstances (:items (k8s/query {:kind naming/instance-resource-kind
-                                        :ns (get-in cluster [:metadata :namespace])
-                                        :apiVersion naming/api}
-                                       {:labelSelector
-                                        (format "service in (%s)" (naming/cluster-name cluster))}))]
-    [(find-pginstance-by-role pginstances "master")
-     (find-pginstance-by-role pginstances "replica")]))
-
-
 (defmethod u/*fn ::find-master-instance [{cluster :resource}]
-  {::master (first (my-pginstances cluster))})
+  {::master (first (ut/my-pginstances cluster))})
 
 (defmethod u/*fn ::find-replica-instance [{cluster :resource}]
-  {::replica (second (my-pginstances cluster))})
+  {::replica (second (ut/my-pginstances cluster))})
 
 (defmethod u/*fn ::load-random-colors [arg]
   (let [colors (take 2 (shuffle naming/colors))]

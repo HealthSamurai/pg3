@@ -223,28 +223,26 @@ host  replication postgres 0.0.0.0/0 md5
            :command (initdb-command)}))
 
 
-(defn init-replica-command [cluster secret color]
-  (let [host (naming/cluster-name cluster)
-        user (k8s/base64-decode (get-in secret [:data :username]))
-        password (k8s/base64-decode (get-in secret [:data :password]))]
-    ["/bin/sh"
-     "-c"
-     "-x"
-     (str/join " && "
-               [(format "rm -rf %s/*" naming/data-path)
-                (format "echo '%s:5432:*:%s:%s' >> ~/.pgpass" host user password)
-                (format "/pg/bin/psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
-                (format "/pg/bin/pg_basebackup -D %s -Fp -h %s -U %s -w -R -Xs -c fast -l %s -P -v" naming/data-path host user color)
-                (format "echo \"primary_slot_name = '%s'\" >> %s/recovery.conf" color naming/data-path )
-                (format "echo \"standby_mode = 'on'\" >> %s/recovery.conf" naming/data-path)
-                (format "chown postgres -R %s" naming/data-path)
-                (format "chown postgres -R %s" naming/wals-path)
-                (format "chmod -R 0700 %s" naming/data-path)])]))
+(defn init-replica-command [host color]
+  ["/bin/sh"
+   "-c"
+   "-x"
+   (str/join " && "
+             [(format "rm -rf %s/*" naming/data-path)
+              (format "echo '%s:5432:*:$PGUSER:$PGPASSWORD' >> ~/.pgpass" host)
+              (format "/pg/bin/psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
+              (format "/pg/bin/pg_basebackup -D %s -Fp -h %s -U $PGUSER -w -R -Xs -c fast -l %s -P -v" naming/data-path host color)
+              (format "echo \"primary_slot_name = '%s'\" >> %s/recovery.conf" color naming/data-path)
+              (format "echo \"standby_mode = 'on'\" >> %s/recovery.conf" naming/data-path)
+              (format "chown postgres -R %s" naming/data-path)
+              (format "chown postgres -R %s" naming/wals-path)
+              (format "chmod -R 0700 %s" naming/data-path)])])
 
-(defn init-replica-pod [cluster secret inst-spec]
-  (db-pod inst-spec {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
-                     :restartPolicy "Never"
-                     :command (init-replica-command cluster secret (get-in inst-spec [:metadata :labels :color]))}))
+(defn init-replica-pod [inst-spec]
+  (let [host (str "pg3-" (get-in inst-spec [:spec :pg-cluster]))]
+    (db-pod inst-spec {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
+                       :restartPolicy "Never"
+                       :command (init-replica-command host (get-in inst-spec [:metadata :labels :color]))})))
 
 
 ;; TODO liveness https://github.com/kubernetes/kubernetes/issues/7891
@@ -265,14 +263,14 @@ host  replication postgres 0.0.0.0/0 md5
      :spec {:replicas 1
             :template (update pod :metadata dissoc :name)}}))
 
-(defn replica-deployment [cluster secret inst-spec]
-  (let [pod (master-pod cluster secret inst-spec
+(defn replica-deployment [cluster inst-spec]
+  (let [pod (master-pod cluster inst-spec
                         {:name (str "pg3-" (get-in cluster [:metadata :name])
                                     "-" (get-in inst-spec [:metadata :labels :color])
                                     )})]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
-     :metadata (:metadata pod) 
+     :metadata (:metadata pod)
      :spec {:replicas 1
             :template (update pod :metadata dissoc :name)}}))
 

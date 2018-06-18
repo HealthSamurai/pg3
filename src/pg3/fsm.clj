@@ -19,7 +19,7 @@
         (when-let [notify (get {:error t/error :success t/success} (::u/status result))]
           (notify (name state-key) (::u/message result) resource))
         (when-let [next-state (get state (::u/status result))]
-          (update-status resource next-state (:status result))))
+          (update-status resource next-state (:status-data result))))
       (do
         (t/error (name state-key) "Unprocessable state" resource)
         (update-status resource :unprocessable-state {})))))
