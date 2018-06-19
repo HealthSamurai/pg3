@@ -57,6 +57,10 @@
 
 (defn to-query-string [m]
   (->> m
+       (mapcat (fn [[k v]]
+                 (if (vector? v)
+                   (map (fn [v] [k v]) v)
+                   [[k v]])))
        (mapv (fn [[k v]]
                (str (name k) "=" (java.net.URLEncoder/encode (str v)))))
        (str/join "&")))
@@ -167,20 +171,53 @@
          (json/parse-string keyword)))
       (create nres))))
 
+
+(defn exec [cfg command]
+  (let [url (resource-url cfg
+                          (str (or (:id cfg) (get-in cfg [:metadata :name])) "/exec")
+                          {:command (str/split command #"\s+")
+                           :stderr "true"
+                           :stdout "true"})
+        url (str/replace url #"http" "ws")
+        response-data (atom nil)
+        response (atom nil)
+        ticks (atom 0)
+        client (WebSocketClient. (SslContextFactory. true))
+        safe-callback (fn [f]
+                        (fn [& args]
+                          (try
+                            (apply f args)
+                            (catch Throwable t
+                              (reset! response {:status :failure
+                                                :message (str t)})))))
+        code->status {1 :succeed
+                      3 :failure}]
+    (try
+      (.start client)
+      (ws/connect url
+        :client client
+        :headers (merge default-headers {"Content-Type" "application/json"
+                                         "X-Stream-Protocol-Version" "v4.channel.k8s.io"})
+        :on-error (fn [e]
+                    (reset! response {:status :failure
+                                      :message (str e)}))
+        :on-close (safe-callback (fn [_ _]
+                                   (reset! response {:status (get code->status (int (first @response-data)) :failure)
+                                                     :message (subs @response-data 1)})))
+        :on-binary (safe-callback (fn [data offset limit]
+                                    (reset! response-data (String. data offset limit)))))
+      (while (and (nil? @response) (< @ticks 10))
+        (swap! ticks inc)
+        (Thread/sleep 500))
+      (or @response {:status :failure :message "Timeout"})
+      (catch Throwable t
+        {:staus :failure
+         :message (str t)}))))
+
 (comment
 
-  (defonce result (atom nil))
-
-  (let [client (WebSocketClient. (SslContextFactory. true))
-        _ (.start client)
-        wsc (ws/connect
-                (str (str/replace kube-url #"http" "ws") "/api/v1/namespaces/pg3/pods/pg3-perseus-antiquewhite-679d976d46-mtbwv/exec?command=df&command=-h&command=%2Fdata&container=pg&container=pg&stderr=true&stdout=true")
-              :client client
-              :headers (merge default-headers {"Content-Type" "application/json"
-                                               "X-Stream-Protocol-Version" "v4.channel.k8s.io"})
-              :on-binary #(reset! result (String. %1 %2 %3)))])
-
-  (println (apply str (drop 1 @result)))
-
-
-  )
+  (exec {:id "pg3-perseus-antiquewhite-679d976d46-mtbwv"
+         :apiVersion "v1"
+         :ns "pg3"
+         :kind "Pod"}
+        "df -h /data"))
