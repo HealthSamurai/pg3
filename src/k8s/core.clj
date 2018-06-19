@@ -1,5 +1,7 @@
 (ns k8s.core
-  (:import java.util.Base64)
+  (:import java.util.Base64
+           (org.eclipse.jetty.util.ssl SslContextFactory)
+           (org.eclipse.jetty.websocket.client WebSocketClient))
   (:require
    [org.httpkit.client :as http-client]
    [clj-json-patch.core :as patch]
@@ -7,7 +9,9 @@
    [cheshire.core :as json]
    [inflections.core :as inflections]
    [clojure.tools.logging :as log]
+   [gniazdo.core :as ws]
    [clojure.string :as str]))
+
 
 (def default-headers
   (if-let [token (System/getenv "KUBE_TOKEN")]
@@ -162,3 +166,21 @@
          :body
          (json/parse-string keyword)))
       (create nres))))
+
+(comment
+
+  (defonce result (atom nil))
+
+  (let [client (WebSocketClient. (SslContextFactory. true))
+        _ (.start client)
+        wsc (ws/connect
+                (str (str/replace kube-url #"http" "ws") "/api/v1/namespaces/pg3/pods/pg3-perseus-antiquewhite-679d976d46-mtbwv/exec?command=df&command=-h&command=%2Fdata&container=pg&container=pg&stderr=true&stdout=true")
+              :client client
+              :headers (merge default-headers {"Content-Type" "application/json"
+                                               "X-Stream-Protocol-Version" "v4.channel.k8s.io"})
+              :on-binary #(reset! result (String. %1 %2 %3)))])
+
+  (println (apply str (drop 1 @result)))
+
+
+  )

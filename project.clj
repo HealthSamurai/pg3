@@ -26,6 +26,7 @@
                  [environ "1.1.0"]
                  [hiccup "1.0.5"]
                  [garden "1.3.2"]
+                 [stylefruits/gniazdo "1.0.1"]
                  [matcho "0.1.0-RC5"]]
   :uberjar-name "pg3.jar"
   :main pg3.core
