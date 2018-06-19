@@ -3,13 +3,15 @@
             [pg3.model :as m]
             [pg3.cluster :as cluster]
             [pg3.instance :as instance]
-            [pg3.naming :as naming]))
+            [pg3.naming :as naming]
+            [pg3.utils :as ut]
+            [pg3.model :as model]))
 
 (defn update-status [inst status]
   (k8s/patch
    (assoc inst
-          :kind naming/instance-resource-kind
-          :apiVersion naming/api
+          :kind (:kind inst)
+          :apiVersion (:apiVersion inst) 
           :status (merge (or (:status inst) {})
                          {:lastUpdate (java.util.Date.)}
                          status))))
@@ -28,12 +30,25 @@
             :replicas {:sync 1}}
      :config {:config {:shared_buffers "1GB"
                        :max_connections 100}}})
+
   (k8s/create perseus-cluster)
+
+  (clojure.pprint/pprint
+   (k8s/find (model/postgres-deployment (:replica (ut/my-pginstances perseus-cluster))))
+   )
+
+  (first (:items (k8s/query {:apiVersion "v1"
+                             :kind "pod"
+                             :ns "pg3"
+                             :labelSelector ["color=antiquewhite" "service=pg3-perseus" "role=replica"]})))
 
   (cluster/watch-clusters)
   (instance/watch-instances)
 
   (def instance-name "pg3-perseus-rebeccapurple")
+
+  (update-status (k8s/find perseus-cluster)
+                 {:phase "waiting-initialization"})
   
   (update-status (k8s/find {:kind "PgInstance"
                             :apiVersion "pg3.io/v1"
@@ -73,6 +88,11 @@
             :replicas {:sync 1}}
      :config {:config {:shared_buffers "1GB"
                        :max_connections 100}}})
+
+
+  (clojure.pprint/pprint (k8s/query {:ns "pg3"
+                                     :apiVersion "v1"
+                                     :kind "pod"}))
 
   (-> (k8s/patch test-db)
       (debug))

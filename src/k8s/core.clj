@@ -173,7 +173,10 @@
 
 
 (defn exec [cfg command]
-  (let [url (resource-url cfg
+  (let [cfg (assoc cfg
+                   :apiVersion "v1"
+                   :kind "pod")
+        url (resource-url cfg
                           (str (or (:id cfg) (get-in cfg [:metadata :name])) "/exec")
                           {:command (str/split command #"\s+")
                            :stderr "true"
