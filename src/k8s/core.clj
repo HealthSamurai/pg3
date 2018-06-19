@@ -12,6 +12,12 @@
    [gniazdo.core :as ws]
    [clojure.string :as str]))
 
+;; Disable jetty debug logs
+(.setLevel
+ (clojure.tools.logging.impl/get-logger
+  clojure.tools.logging/*logger-factory*
+  'org.eclipse.jetty)
+ ch.qos.logback.classic.Level/INFO)
 
 (def default-headers
   (if-let [token (System/getenv "KUBE_TOKEN")]
@@ -58,7 +64,7 @@
 (defn to-query-string [m]
   (->> m
        (mapcat (fn [[k v]]
-                 (if (vector? v)
+                 (if (sequential? v)
                    (map (fn [v] [k v]) v)
                    [[k v]])))
        (mapv (fn [[k v]]
@@ -84,10 +90,10 @@
                     (str "/" (str/join "/" path)))
                   (when params (str "?" (to-query-string params)))))))
 
-(defn query [cfg & pth]
-  (println  (apply resource-url cfg pth))
+(defn query [cfg & parts]
+  (println "QUERY" (apply resource-url cfg parts))
   (let [res @(http-client/get
-              (apply resource-url cfg pth)
+              (apply resource-url cfg parts)
               {:headers (merge default-headers {"Content-Type" "application/json"})
                :insecure? true})]
     (-> res
@@ -178,10 +184,11 @@
                    :kind "pod")
         url (resource-url cfg
                           (str (or (:id cfg) (get-in cfg [:metadata :name])) "/exec")
-                          {:command (str/split command #"\s+")
+                          {:command (concat [(:executable command)] (:args command))
                            :stderr "true"
                            :stdout "true"})
         url (str/replace url #"http" "ws")
+        _ (println "EXEC" url)
         response-data (atom nil)
         response (atom nil)
         ticks (atom 0)
@@ -209,7 +216,7 @@
                                                      :message (subs @response-data 1)})))
         :on-binary (safe-callback (fn [data offset limit]
                                     (reset! response-data (String. data offset limit)))))
-      (while (and (nil? @response) (< @ticks 10))
+      (while (and (nil? @response) (< @ticks 30))
         (swap! ticks inc)
         (Thread/sleep 500))
       (or @response {:status :failure :message "Timeout"})

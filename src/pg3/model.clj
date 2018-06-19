@@ -65,7 +65,7 @@
 (defn instance-data-volume-spec [inst-spec]
   (volume-spec
    {:name (naming/data-volume-name inst-spec)
-    :labels (merge (inherited-labels inst-spec) {:pgrole "data"})
+    :labels (merge (inherited-labels inst-spec) {:type "data"})
     :namespace (inherited-namespace inst-spec)
     :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
     :storage (get-in inst-spec [:spec :size])}))
@@ -73,7 +73,7 @@
 (defn instance-wals-volume-spec [inst-spec]
   (volume-spec
    {:name (naming/wals-volume-name inst-spec)
-    :labels (merge (inherited-labels inst-spec) {:pgrole "data"})
+    :labels (merge (inherited-labels inst-spec) {:type "wal"})
     :namespace (inherited-namespace inst-spec)
     :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
     :storage (get-in inst-spec [:spec :size])}))
@@ -217,10 +217,11 @@ host  replication postgres 0.0.0.0/0 md5
             :volumeMounts (volume-mounts inst-spec)}]}})
 
 (defn init-master-pod [inst-spec]
-  (db-pod inst-spec
-          {:name (str (get-in inst-spec [:metadata :name]) "-initdb")
-           :restartPolicy "Never"
-           :command (initdb-command)}))
+  (db-pod
+   (assoc-in inst-spec [:metadata :labels :type] "init")
+   {:name (str (get-in inst-spec [:metadata :name]) "-init-master")
+    :restartPolicy "Never"
+    :command (initdb-command)}))
 
 
 (defn init-replica-command [host color]
@@ -240,18 +241,21 @@ host  replication postgres 0.0.0.0/0 md5
 
 (defn init-replica-pod [inst-spec]
   (let [host (str "pg3-" (get-in inst-spec [:spec :pg-cluster]))]
-    (db-pod inst-spec {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
+    (db-pod
+     (assoc-in inst-spec [:metadata :labels :type] "init")
+     {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
                        :restartPolicy "Never"
                        :command (init-replica-command host (get-in inst-spec [:metadata :labels :color]))})))
 
 
 ;; TODO liveness https://github.com/kubernetes/kubernetes/issues/7891
 (defn postgres-pod [inst-spec opts]
-  (db-pod inst-spec
-          (merge opts {:command
-                       ["gosu", "postgres", "postgres",
-                        (str "--config-file=" naming/config-path "/postgresql.conf")
-                        (str "--hba-file=" naming/config-path "/pg_hba.conf")]})))
+  (db-pod
+   (assoc-in inst-spec [:metadata :labels :type] "instance")
+   (merge opts {:command
+                ["gosu", "postgres", "postgres",
+                 (str "--config-file=" naming/config-path "/postgresql.conf")
+                 (str "--hba-file=" naming/config-path "/pg_hba.conf")]})))
 
 (defn postgres-deployment [inst-spec]
   (let [pod (postgres-pod inst-spec

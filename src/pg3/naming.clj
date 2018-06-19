@@ -59,12 +59,12 @@
    :service (cluster-name cluster)})
 
 (defn instance-labels [role color]
-  {:pgrole role
+  {:role role
    :color color})
 
 (defn master-service-selector [cluster-name]
   {:service (str "pg3-" cluster-name) 
-   :pgrole "master"})
+   :role "master"})
 
 (defn replica-service-name [inst-spec]
   (resource-name inst-spec))
@@ -72,4 +72,4 @@
 (defn replica-service-selector [cluster-name clr]
   {:service (service-name cluster-name)
    :color clr
-   :pgrole "replica"})
+   :role "replica"})

@@ -10,6 +10,7 @@
                                   {:lastUpdate (java.util.Date.)
                                    :phase (name state-key)}))))
 
+;; TODO: phase timeout
 (defn process-state [fsm resource]
   (let [state-key (keyword (get-in resource [:status :phase] "init"))]
     (if-let [state (fsm state-key)]

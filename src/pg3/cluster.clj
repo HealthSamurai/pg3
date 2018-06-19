@@ -56,32 +56,58 @@
 (defmethod u/*fn ::instances-active? [{cluster :resource}]
   (let [{master :master replica :replica} (ut/my-pginstances cluster)]
     (when (= (get-in master [:status :phase])
-             (get-in master [:status :phase])
+             (get-in replica [:status :phase])
              "active")
       {::u/status :success
        ::u/message "Cluster is active"})))
 
-(defmethod u/*fn ::check-instance-disk [{cluster :resource role ::role}]
-  (let [inst (get (ut/my-pginstances cluster) role)
-        ns (get-in cluster [:metadata :namespace])
-        color (get-in inst [:metadata :labels :color])
+(defn load-pods [cluster]
+  (let [ns (get-in cluster [:metadata :namespace])
         cluster-name (naming/cluster-name cluster)
-        pod (first (:items (k8s/query {:apiVersion "v1"
-                                       :kind "pod"
-                                       :ns ns
-                                       :labelSelector [(str "color=" color)
-                                                       (str "service=" cluster-name)
-                                                       (str "role=" role)]})))]
-    (if pod
-      (let [_ (clojure.pprint/pprint pod)
-            {status :status
-             message :message} (k8s/exec (assoc pod
-                                                :apiVersion "v1"
-                                                :kind "pod") "df -h /data")]
-        {::u/status (if (= status :succeed) :success :error)
-         ::u/message message})
-      {::u/status :error
-       ::u/message (str (str/capitalize (name role)) " pod is not running")})))
+        pods (:items (k8s/query {:apiVersion "v1"
+                                 :kind "pod"
+                                 :ns ns}
+                                {:labelSelector (format "service=%s,type=instance" cluster-name)}))]
+    (->> pods
+         (map (fn [pod]
+                [(keyword (get-in pod [:metadata :labels :role])) pod]))
+         (into {}))))
+
+(defmethod u/*fn ::load-pods [{cluster :resource}]
+  {::pods (load-pods cluster)})
+
+(defmethod u/*fn ::pod-running? [{role ::role pods ::pods errors ::errors :or {errors []}}]
+  (if-let [pod (get pods role)]
+    {::pod pod}
+    {::errors (conj errors (str (str/capitalize (name role)) " • Pod is not running"))}))
+
+(defmethod u/*fn ::check-instance-disk [{pod ::pod errors ::errors :or {errors []}}]
+  (when pod
+    (let [cmd {:executable "/bin/bash"
+               :args ["-c" "df -h /data --output=pcent | grep -P -o \\\\d+"]}
+          {status :status message :message} (k8s/exec pod cmd)
+          role (str/capitalize (get-in pod [:metadata :labels :role]))]
+      (cond
+        (and (= status :succeed) (>= (ut/read-int message) 10))
+        {::errors (conj errors (format "%s • Low disk space: %d%%" role (ut/read-int message)))}
+
+        (= status :failure)
+        {::errors (conj errors message)}))))
+
+(defmethod u/*fn ::check-postgres [{pod ::pod errors ::errors :or {errors []}}]
+  (when pod
+    (let [cmd {:executable "psql"
+               :args ["-c" "select 1;"]}
+          {status :status message :message} (k8s/exec pod cmd)
+          role (str/capitalize (get-in pod [:metadata :labels :role]))]
+      (println "status" status message)
+      (when (= status :failure)
+        {::errors (conj errors (format "%s • Postgresql not available: %s" role message))}))))
+
+(defmethod u/*fn ::calculate-monitoring-result [{errors ::errors}]
+  (when-not (empty? errors)
+    {::u/status :error
+     ::u/message (str "\n" (str/join "\n" errors))}))
 
 (def fsm-pg-cluster
   {:init {:action-stack [::ensure-cluster-config
@@ -96,14 +122,16 @@
    :waiting-initialization {:action-stack [::instances-active?]
                             :success :monitoring
                             :error :error-state}
-   :monitoring {:action-stack [{::u/fn ::check-instance-disk
-                                ::role :master}
-                               {::u/fn ::check-instance-disk
-                                ::role :replica}
+   :monitoring {:action-stack [::load-pods
+                               {::u/fn ::pod-running? ::role :master}
+                               {::u/fn ::check-instance-disk}
+                               {::u/fn ::check-postgres}
+                               {::u/fn ::pod-running? ::role :replica}
+                               {::u/fn ::check-instance-disk}
+                               {::u/fn ::check-postgres}
+                               ::calculate-monitoring-result
                                #_::check-replication]
-                ;; :error :monitoring
-                :error :error-state
-                }
+                :error :monitoring}
    :error-state {}})
 
 (defn watch-clusters []

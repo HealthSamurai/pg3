@@ -5,7 +5,8 @@
             [pg3.instance :as instance]
             [pg3.naming :as naming]
             [pg3.utils :as ut]
-            [pg3.model :as model]))
+            [pg3.model :as model]
+            [clojure.string :as str]))
 
 (defn update-status [inst status]
   (k8s/patch
@@ -16,20 +17,22 @@
                          {:lastUpdate (java.util.Date.)}
                          status))))
 
+(def perseus-cluster
+  {:kind "PgCluster"
+   :ns "pg3"
+   :apiVersion "pg3.io/v1"
+   :metadata {:name "perseus"
+              :namespace "pg3"
+              :labels {:service "pegasus"
+                       :system "pg3"}}
+   :spec {:image "aidbox/aidboxdb"
+          :version "passive"
+          :size "1Gi"
+          :replicas {:sync 1}}
+   :config {:config {:shared_buffers "1GB"
+                     :max_connections 100}}})
+
 (comment
-  (def perseus-cluster
-    {:kind "PgCluster"
-     :ns "pg3"
-     :apiVersion "pg3.io/v1"
-     :metadata {:name "perseus"
-                :labels {:service "pegasus"
-                         :system "pg3"}}
-     :spec {:image "aidbox/aidboxdb"
-            :version "passive"
-            :size "1Gi"
-            :replicas {:sync 1}}
-     :config {:config {:shared_buffers "1GB"
-                       :max_connections 100}}})
 
   (k8s/create perseus-cluster)
 
@@ -47,8 +50,10 @@
 
   (def instance-name "pg3-perseus-rebeccapurple")
 
-  (update-status (k8s/find perseus-cluster)
-                 {:phase "waiting-initialization"})
+  (clojure.pprint/pprint (cluster/load-pods perseus-cluster))
+
+  (update-status (k8s/find perseus-cluster) {:phase "waiting-initialization"})
+  (update-status (k8s/find perseus-cluster) {:phase "monitoring"})
   
   (update-status (k8s/find {:kind "PgInstance"
                             :apiVersion "pg3.io/v1"
