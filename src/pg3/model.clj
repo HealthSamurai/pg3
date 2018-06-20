@@ -83,10 +83,10 @@
    :max_connections 100
    :shared_buffers "1GB"
    :max_replication_slots  30
-   :archive_timeout "10min"
-   :max_wal_size  "1GB"
+   :archive_timeout 0 #_"10min"
+   :max_wal_size "1GB"
    :max_wal_senders 30
-   :wal_keep_segments 100})
+   :wal_keep_segments 5 #_100})
 
 (def default-postgresql-config
   {:listen_addresses "*"
