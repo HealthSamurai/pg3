@@ -177,6 +177,22 @@
          (json/parse-string keyword)))
       (create nres))))
 
+;; https://github.com/kubernetes/kubernetes/blob/5e4625cad72e5b9dde2f8a51eed06c59a6d70869/pkg/kubelet/server/remotecommand/websocket.go#L42
+(def channel->stream {0 :stdin ;; not used
+                      1 :stdout
+                      2 :stderr
+                      3 :k8s-error
+                      4 :k8s-size ;; not used
+                      })
+(defn parse-ws-message [message]
+  (let [channel (int (first message))
+        stream (channel->stream channel)
+        message  (subs message 1)]
+    (assert (#{:stdout
+               :stderr
+               :k8s-error} stream) "Wrong websocket data")
+    [stream message]))
+
 (defn exec [cfg command]
   (let [cfg (assoc cfg
                    :apiVersion "v1"
@@ -189,7 +205,9 @@
         url (str/replace url #"http" "ws")
         _ (println "EXEC" url)
         client (WebSocketClient. (SslContextFactory. true))
-        response-data (atom nil)
+        response-data (atom {:stdout ""
+                             :stderr ""
+                             :k8s-error ""})
         response (atom nil)
         ticks (atom 0)
         safe-callback (fn [f]
@@ -199,8 +217,7 @@
                             (catch Throwable t
                               (reset! response {:status :failure
                                                 :message (str t)})))))
-        code->status {1 :succeed
-                      3 :failure}]
+     ]
     (try
       (.start client)
       (ws/connect url
@@ -211,10 +228,21 @@
                     (reset! response {:status :failure
                                       :message (str e)}))
         :on-close (safe-callback (fn [_ _]
-                                   (reset! response {:status (get code->status (int (first @response-data)) :failure)
-                                                     :message (subs @response-data 1)})))
+                                   (reset!
+                                    response
+                                    (cond (not (str/blank? (:stderr @response-data)))
+                                          {:status :failure
+                                           :message (:stderr @response-data)}
+                                          (not (str/blank? (:k8s-error @response-data)))
+                                          {:status :failure
+                                           :message (:k8s-error @response-data)}
+                                          :else
+                                          {:status :success
+                                           :message (:stdout @response-data)}))))
         :on-binary (safe-callback (fn [data offset limit]
-                                    (reset! response-data (String. data offset limit)))))
+                                    (let [message (String. data offset limit)
+                                          [stream message] (parse-ws-message message)]
+                                      (swap! response-data update stream str message)))))
       (while (and (nil? @response) (< @ticks 30))
         (swap! ticks inc)
         (Thread/sleep 500))

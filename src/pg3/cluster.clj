@@ -88,7 +88,8 @@
           {status :status message :message} (k8s/exec pod cmd)
           role (str/capitalize (get-in pod [:metadata :labels :role]))]
       (cond
-        (and (= status :succeed) (>= (ut/read-int message) 90))
+        (and (= status :succeed)
+             (>= (ut/read-int message) 90))
         {::errors (conj errors (format "%s • Low disk space: %d%%" role (ut/read-int message)))}
 
         (= status :failure)
