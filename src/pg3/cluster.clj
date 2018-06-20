@@ -77,9 +77,12 @@
   {::pods (load-pods cluster)})
 
 (defmethod u/*fn ::pod-running? [{role ::role pods ::pods errors ::errors :or {errors []}}]
-  (if-let [pod (get pods role)]
-    {::pod pod}
-    {::errors (conj errors (str (str/capitalize (name role)) " • Pod is not running"))}))
+  (let [pod (get pods role)
+        running? (= (get-in pod [:status :phase]) "Running")]
+    (cond
+      running? {::pod pod}
+      pod {::errors (conj errors (str (str/capitalize (name role)) " • Pod is not running"))}
+      :else {::errors (conj errors (str (str/capitalize (name role)) " • Pod does not exists"))})))
 
 (defmethod u/*fn ::check-instance-disk [{pod ::pod errors ::errors :or {errors []}}]
   (when pod
@@ -109,10 +112,9 @@
     (let [cmd {:executable "psql"
                :args ["-qtAX" "-c" "select count(*) from pg_stat_replication;"]}
           {status :status message :message} (k8s/exec pod cmd)
-          _ (println status message)
           role (str/capitalize (get-in pod [:metadata :labels :role]))]
       (cond (and (= status :succeed) (< (ut/read-int message) 1))
-            {::errors (conj errors (format "%s • has no connected replicas" role))}
+            {::errors (conj errors (format "%s • There is no any alive replica" role))}
             (= status :failure)
             {::errors (conj errors (format "%s • %s" role message))}))))
 

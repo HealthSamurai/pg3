@@ -237,7 +237,7 @@
                                           {:status :failure
                                            :message (:k8s-error @response-data)}
                                           :else
-                                          {:status :success
+                                          {:status :succeed
                                            :message (:stdout @response-data)}))))
         :on-binary (safe-callback (fn [data offset limit]
                                     (let [message (String. data offset limit)
