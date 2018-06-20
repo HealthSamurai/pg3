@@ -100,7 +100,6 @@
                :args ["-c" "select 1;"]}
           {status :status message :message} (k8s/exec pod cmd)
           role (str/capitalize (get-in pod [:metadata :labels :role]))]
-      (println "status" status message)
       (when (= status :failure)
         {::errors (conj errors (format "%s • Postgresql not available: %s" role message))}))))
 
