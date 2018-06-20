@@ -177,9 +177,6 @@
          (json/parse-string keyword)))
       (create nres))))
 
-(def client (WebSocketClient. (SslContextFactory. true)))
-(.start client)
-
 (defn exec [cfg command]
   (let [cfg (assoc cfg
                    :apiVersion "v1"
@@ -191,6 +188,7 @@
                            :stdout "true"})
         url (str/replace url #"http" "ws")
         _ (println "EXEC" url)
+        client (WebSocketClient. (SslContextFactory. true))
         response-data (atom nil)
         response (atom nil)
         ticks (atom 0)
@@ -204,6 +202,7 @@
         code->status {1 :succeed
                       3 :failure}]
     (try
+      (.start client)
       (ws/connect url
         :client client
         :headers (merge default-headers {"Content-Type" "application/json"
@@ -222,7 +221,9 @@
       (or @response {:status :failure :message "Timeout"})
       (catch Throwable t
         {:status :failure
-         :message (str t)}))))
+         :message (str t)})
+      (finally
+        (.stop client)))))
 
 (comment
 
