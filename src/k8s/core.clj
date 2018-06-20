@@ -177,6 +177,8 @@
          (json/parse-string keyword)))
       (create nres))))
 
+(def client (WebSocketClient. (SslContextFactory. true)))
+(.start client)
 
 (defn exec [cfg command]
   (let [cfg (assoc cfg
@@ -192,7 +194,6 @@
         response-data (atom nil)
         response (atom nil)
         ticks (atom 0)
-        client (WebSocketClient. (SslContextFactory. true))
         safe-callback (fn [f]
                         (fn [& args]
                           (try
@@ -203,7 +204,6 @@
         code->status {1 :succeed
                       3 :failure}]
     (try
-      (.start client)
       (ws/connect url
         :client client
         :headers (merge default-headers {"Content-Type" "application/json"
@@ -225,6 +225,11 @@
          :message (str t)}))))
 
 (comment
+
+  (let [c (WebSocketClient. (SslContextFactory. true))]
+    (.start c)
+    (.start c)
+    )
 
   (exec {:id "pg3-perseus-antiquewhite-679d976d46-mtbwv"
          :apiVersion "v1"
