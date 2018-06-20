@@ -221,7 +221,7 @@
         (Thread/sleep 500))
       (or @response {:status :failure :message "Timeout"})
       (catch Throwable t
-        {:staus :failure
+        {:status :failure
          :message (str t)}))))
 
 (comment

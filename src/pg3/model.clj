@@ -271,7 +271,7 @@ host  replication postgres 0.0.0.0/0 md5
   (let [cluster-name (get-in inst-spec [:spec :pg-cluster])]
     {:apiVersion "v1"
      :kind "Service"
-     :metadata {:name (naming/service-name cluster-name) 
+     :metadata {:name (naming/service-name cluster-name)
                 :namespace (inherited-namespace inst-spec)
                 :labels (inherited-labels inst-spec)}
      :spec {:selector (naming/master-service-selector cluster-name) 

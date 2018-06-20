@@ -24,7 +24,6 @@
 
 (defn start []
   (stop)
-  (telegram/start)
   (k8s/patch m/cluster-definition)
   (k8s/patch m/instance-definition)
   (let [thr (Thread.
@@ -35,7 +34,6 @@
                    (watch)
                    (Thread/sleep 10000))
                  (catch java.lang.InterruptedException e
-                   (telegram/stop)
                    (println "Bay, bay")))))]
     (reset! server thr)
     (.start thr)))
