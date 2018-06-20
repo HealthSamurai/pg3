@@ -103,6 +103,18 @@
       (when (= status :failure)
         {::errors (conj errors (format "%s • Postgresql not available: %s" role message))}))))
 
+(defmethod u/*fn ::check-replication-status [{pod ::pod errors ::errors :or {errors []}}]
+  (when pod
+    (let [cmd {:executable "psql"
+               :args ["-qtAX" "-c" "select count(*) from pg_stat_replication;"]}
+          {status :status message :message} (k8s/exec pod cmd)
+          _ (println status message)
+          role (str/capitalize (get-in pod [:metadata :labels :role]))]
+      (cond (and (= status :succeed) (< (ut/read-int message) 1))
+            {::errors (conj errors (format "%s • has no connected replicas" role))}
+            (= status :failure)
+            {::errors (conj errors (format "%s • %s" role message))}))))
+
 (defmethod u/*fn ::calculate-monitoring-result [{errors ::errors}]
   (when-not (empty? errors)
     {::u/status :error
@@ -125,6 +137,7 @@
                                {::u/fn ::pod-running? ::role :master}
                                {::u/fn ::check-instance-disk}
                                {::u/fn ::check-postgres}
+                               {::u/fn ::check-replication-status}
                                {::u/fn ::pod-running? ::role :replica}
                                {::u/fn ::check-instance-disk}
                                {::u/fn ::check-postgres}
