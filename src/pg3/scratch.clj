@@ -54,6 +54,7 @@
 
   (update-status (k8s/find perseus-cluster) {:phase "waiting-initialization"})
   (update-status (k8s/find perseus-cluster) {:phase "monitoring"})
+  (update-status (k8s/find perseus-cluster) {:phase "error-state"})
   
   (update-status (k8s/find {:kind "PgInstance"
                             :apiVersion "pg3.io/v1"

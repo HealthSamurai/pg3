@@ -1,16 +1,51 @@
 (ns pg3.fsm
   (:require [unifn.core :as u]
             [pg3.telegram :as t]
-            [k8s.core :as k8s]))
+            [k8s.core :as k8s]
+            [cheshire.core :as json]
+            [pg3.utils :as ut]
+            [clojure.string :as str]))
+
+(defn date->string [date]
+  (let [tz (java.util.TimeZone/getTimeZone "UTC")
+        df (doto (java.text.SimpleDateFormat. "yyyy-MM-dd'T'HH:mm:ss'Z'")
+             (.setTimeZone tz))]
+    (.format df date)))
+
+(defn string->date [s]
+  (let [tz (java.util.TimeZone/getTimeZone "UTC")
+        df (doto (java.text.SimpleDateFormat. "yyyy-MM-dd'T'HH:mm:ss'Z'")
+             (.setTimeZone tz))]
+    (.parse df s)))
 
 (defn update-status [resource state-key status]
   (k8s/patch
    (assoc resource :status (merge (or (:status resource) {})
                                   status
-                                  {:lastUpdate (java.util.Date.)
+                                  {:lastUpdate (date->string (java.util.Date.))
                                    :phase (name state-key)}))))
 
-;; TODO: phase timeout
+(defn duration [resource]
+  (let [last-update (get-in resource [:status :lastUpdate])
+        last-update (or (and last-update (string->date last-update))
+                        (java.util.Date.))]
+    (- (.getTime (java.util.Date.)) (.getTime last-update))))
+
+(defn parse-timeout [timeout]
+  (let [n (ut/read-int (str/join "" (butlast timeout)))
+        t (last timeout)]
+    (case t
+      \s (* n 1000)
+      \m (* n 1000 60)
+      \h (* n 1000 60 60)
+      (throw (Exception. (str "Not supported type: " t))))))
+
+(defn timeout? [state resource]
+  (when-let [timeout (:timeout state)]
+    (let [t (parse-timeout timeout)
+          d (duration resource)]
+      (> d t))))
+
 (defn process-state [fsm resource]
   (let [state-key (keyword (get-in resource [:status :phase] "init"))]
     (if-let [state (fsm state-key)]
@@ -19,9 +54,12 @@
                                            ::u/safe? true})]
         (when-let [notify (get {:error t/error :success t/success} (::u/status result))]
           (notify (name state-key) (::u/message result) resource))
-        (when-let [next-state (get state (::u/status result))]
-          (update-status resource next-state (:status-data result))))
-      (do
+        (if-let [next-state (get state (::u/status result))]
+          (update-status resource next-state (:status-data result))
+          (when (timeout? state resource)
+            (t/error (name state-key) "Timeout" resource)
+            (update-status resource :state-timeout {}))))
+      (when-not (#{:unprocessable-state :state-timeout} state-key)
         (t/error (name state-key) "Unprocessable state" resource)
         (update-status resource :unprocessable-state {})))))
 
@@ -51,6 +89,7 @@
     (def sample {:init {:action-stack [::first-step
                                        ::second-step]
                         :success :next-state
+                        :timeout "1s" ;; or "1m" "1h"
                         :error :error-state}
                  :next-state {:action-stack [::third-step]
                               :success :last-state

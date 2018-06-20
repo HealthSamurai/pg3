@@ -17,3 +17,12 @@
 
 (defn read-int [s]
   (Integer/parseInt (str/trim s)))
+
+(defn resource-ok? [resource]
+  (every? (partial = "True") (map :status (get-in resource [:status :conditions]))))
+
+(defn resource-errors [resource]
+  (->> resource
+       ((comp :conditions :status))
+       (filter (fn [c] (= (:status c) "False")))
+       (mapv :message)))

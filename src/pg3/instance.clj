@@ -104,12 +104,9 @@
       {::u/status :success
        ::u/message (str role " starting")})))
 
-(defn deployment-success? [deployment]
-  (every? (partial = "True") (map :status (get-in deployment [:status :conditions]))))
-
 (defmethod u/*fn ::instance-started? [{inst :resource}]
   (let [deployment (k8s/find (model/postgres-deployment inst))]
-    (when-not (deployment-success? deployment)
+    (when-not (ut/resource-ok? deployment)
       {::u/status :error
        ::u/message (str "Postgres deployment fail: " (get-in deployment [:metadata :name]))})))
 

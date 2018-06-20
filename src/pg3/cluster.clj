@@ -78,11 +78,21 @@
 
 (defmethod u/*fn ::pod-running? [{role ::role pods ::pods errors ::errors :or {errors []}}]
   (let [pod (get pods role)
-        running? (= (get-in pod [:status :phase]) "Running")]
+        running? (= (get-in pod [:status :phase]) "Running")
+        ok? (ut/resource-ok? pod)]
     (cond
-      running? {::pod pod}
-      pod {::errors (conj errors (str (str/capitalize (name role)) " • Pod is not running"))}
-      :else {::errors (conj errors (str (str/capitalize (name role)) " • Pod does not exists"))})))
+      (and running? ok?)
+      {::pod pod}
+
+      (not pod)
+      {::errors (conj errors (str (str/capitalize (name role)) " • Pod does not exists"))}
+
+      :else
+      {::errors (cond-> errors
+                  (not running?) (conj (str (str/capitalize (name role)) " • Pod is not running"))
+                  (not ok?)      (concat (mapv (fn [err]
+                                                 (str (str/capitalize (name role)) " • " err))
+                                               (ut/resource-errors pod))))})))
 
 (defmethod u/*fn ::check-instance-disk [{pod ::pod errors ::errors :or {errors []}}]
   (when pod
