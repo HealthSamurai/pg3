@@ -15,8 +15,8 @@
 ;; watch status of clusters
 ;; based on instances state
 
-(defmethod u/*fn ::load-instances [{cluster :resource}]
-  {::instances (ut/my-pginstances cluster)})
+(defmethod u/*fn ::load-pg-instances [{cluster :resource}]
+  {::ut/pginstances (ut/pginstances (get-in cluster [:metadata :namespace]) (naming/service-name (naming/resource-name cluster)))})
 
 (defmethod u/*fn ::load-random-colors [arg]
   (let [colors (take 2 (shuffle naming/colors))]
@@ -43,8 +43,11 @@
 (defmethod u/*fn ::ensure-cluster-secret [{cluster :resource}]
   (strict-patch (model/secret cluster)))
 
+(defmethod u/*fn ::ensure-cluster-backup [{cluster :resource}]
+  (strict-patch (model/backup-spec cluster)))
+
 (defmethod u/*fn ::ensure-instance [{role ::role cluster :resource :as arg}]
-  (let [instance (get-in arg [::instances role])
+  (let [instance (get-in arg [::ut/pginstances role])
         color (get-in arg [::colors role])
         instance (or instance (model/instance-spec cluster color (name role)))]
     (strict-patch instance)))
@@ -53,21 +56,13 @@
   {::u/status :success
    ::u/message "Cluster initialized"})
 
-(defmethod u/*fn ::instances-active? [{cluster :resource}]
-  (let [{master :master replica :replica} (ut/my-pginstances cluster)]
-    (when (= (get-in master [:status :phase])
-             (get-in replica [:status :phase])
-             "active")
-      {::u/status :success
-       ::u/message "Cluster is active"})))
-
 (defn load-pods [cluster]
   (let [ns (get-in cluster [:metadata :namespace])
-        cluster-name (naming/cluster-name cluster)
+        service-name (naming/service-name (naming/resource-name cluster))
         pods (:items (k8s/query {:apiVersion "v1"
                                  :kind "pod"
                                  :ns ns}
-                                {:labelSelector (format "service=%s,type=instance" cluster-name)}))]
+                                {:labelSelector (format "service=%s,type=instance" service-name)}))]
     (->> pods
          (map (fn [pod]
                 [(keyword (get-in pod [:metadata :labels :role])) pod]))
@@ -133,17 +128,20 @@
     {::u/status :error
      ::u/message (str "\n" (str/join "\n" errors))}))
 
-(def fsm-pg-cluster
+(def fsm-main
   {:init {:action-stack [::ensure-cluster-config
                          ::ensure-cluster-secret
-                         ::load-instances
+                         ::ensure-cluster-backup
+                         ::load-pg-instances
                          ::load-random-colors
                          {::u/fn ::ensure-instance ::role :master}
                          {::u/fn ::ensure-instance ::role :replica}
                          ::finish-init]
           :success :waiting-initialization
           :error :error-state}
-   :waiting-initialization {:action-stack [::instances-active?]
+   :waiting-initialization {:action-stack [::load-pg-instances
+                                           {::u/fn ::ut/cluster-active?
+                                            ::ut/success-message "Cluster is active"}]
                             :success :monitoring
                             :error :error-state}
    :monitoring {:action-stack [::load-pods
@@ -159,10 +157,10 @@
                 :error :monitoring}
    :error-state {}})
 
-(defn watch-clusters []
+(defn watch []
   (doseq [cluster (:items (k8s/query {:kind naming/cluster-resource-kind
                                       :apiVersion naming/api}))]
-    (fsm/process-state fsm-pg-cluster cluster)))
+    (fsm/process-state fsm-main cluster)))
 
 (comment
-  (watch-clusters))
+  (watch))

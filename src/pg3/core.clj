@@ -6,13 +6,15 @@
             [cheshire.core :as json]
             [pg3.cluster :as cluster]
             [pg3.telegram :as telegram]
-            [pg3.instance :as instance])
+            [pg3.instance :as instance]
+            [pg3.backup :as backup])
   (:gen-class))
 
 
 (defn watch []
-  (cluster/watch-clusters)
-  (instance/watch-instances))
+  (cluster/watch)
+  (instance/watch)
+  (backup/watch))
 
 
 (defonce server (atom nil))
@@ -26,6 +28,7 @@
   (stop)
   (k8s/patch m/cluster-definition)
   (k8s/patch m/instance-definition)
+  (k8s/patch m/backup-definition)
   (let [thr (Thread.
              (fn []
                (println "Start")

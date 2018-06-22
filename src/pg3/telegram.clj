@@ -61,7 +61,7 @@
 
 (defn notify* [emoji phase text res]
   (let [msg (str emoji (make-message phase text res))]
-    (println "telegram: " msg)
+    #_(spit "/Users/ilyabeda/telegram.txt" (str msg "\n") :append true)
     (notify msg)))
 
 (def error (partial notify* noEmoji))

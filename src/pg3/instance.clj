@@ -196,7 +196,7 @@
                        :error :error-state}
     :active {}}))
 
-(defn watch-instances []
+(defn watch []
   (doseq [inst (:items (k8s/query {:kind naming/instance-resource-kind :apiVersion naming/api}))]
     (let [fsm* (if (= "master" (get-in inst [:spec :role])) fsm-master fsm-replica)]
       (fsm/process-state fsm* inst))))
@@ -204,6 +204,6 @@
 
 (comment
 
-  (watch-instances)
+  (watch)
 
   )

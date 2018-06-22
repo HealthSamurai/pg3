@@ -6,44 +6,17 @@
             [pg3.utils :as ut]
             [clojure.string :as str]))
 
-(defn date->string [date]
-  (let [tz (java.util.TimeZone/getTimeZone "UTC")
-        df (doto (java.text.SimpleDateFormat. "yyyy-MM-dd'T'HH:mm:ss'Z'")
-             (.setTimeZone tz))]
-    (.format df date)))
-
-(defn string->date [s]
-  (let [tz (java.util.TimeZone/getTimeZone "UTC")
-        df (doto (java.text.SimpleDateFormat. "yyyy-MM-dd'T'HH:mm:ss'Z'")
-             (.setTimeZone tz))]
-    (.parse df s)))
-
 (defn update-status [resource state-key status]
   (k8s/patch
    (assoc resource :status (merge (or (:status resource) {})
                                   status
-                                  {:lastUpdate (date->string (java.util.Date.))
+                                  {:lastUpdate (ut/now-string)
                                    :phase (name state-key)}))))
-
-(defn duration [resource]
-  (let [last-update (get-in resource [:status :lastUpdate])
-        last-update (or (and last-update (string->date last-update))
-                        (java.util.Date.))]
-    (- (.getTime (java.util.Date.)) (.getTime last-update))))
-
-(defn parse-timeout [timeout]
-  (let [n (ut/read-int (str/join "" (butlast timeout)))
-        t (last timeout)]
-    (case t
-      \s (* n 1000)
-      \m (* n 1000 60)
-      \h (* n 1000 60 60)
-      (throw (Exception. (str "Not supported type: " t))))))
 
 (defn timeout? [state resource]
   (when-let [timeout (:timeout state)]
-    (let [t (parse-timeout timeout)
-          d (duration resource)]
+    (let [t (ut/parse-period timeout)
+          d (ut/duration resource)]
       (> d t))))
 
 (defn process-state [fsm resource]

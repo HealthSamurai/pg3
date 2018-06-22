@@ -193,6 +193,16 @@
                :k8s-error} stream) "Wrong websocket data")
     [stream message]))
 
+(defn logs [cfg]
+  (let [url (resource-url
+             cfg
+             (str (or (:id cfg) (get-in cfg [:metadata :name])) "/log"))
+        res @(http-client/get
+              url
+              {:headers default-headers
+               :insecure? true})]
+    (:body res)))
+
 (defn exec [cfg command]
   (let [cfg (assoc cfg
                    :apiVersion "v1"
@@ -259,6 +269,11 @@
     (.start c)
     (.start c)
     )
+
+  (logs {:id "dapi-test-pod"
+         :apiVersion "v1"
+         :ns "ir4y"
+         :kind "Pod"})
 
   (exec {:id "pg3-perseus-antiquewhite-679d976d46-mtbwv"
          :apiVersion "v1"

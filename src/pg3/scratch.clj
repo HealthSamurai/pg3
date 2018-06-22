@@ -12,7 +12,7 @@
   (k8s/patch
    (assoc inst
           :kind (:kind inst)
-          :apiVersion (:apiVersion inst) 
+          :apiVersion (:apiVersion inst)
           :status (merge (or (:status inst) {})
                          {:lastUpdate (java.util.Date.)}
                          status))))
@@ -25,16 +25,20 @@
               :namespace "pg3"
               :labels {:service "pegasus"
                        :system "pg3"}}
-   :spec {:image "aidbox/aidboxdb"
-          :version "passive"
+   :spec {:image "aidbox/db"
+          :version "passive-latest"
           :size "1Gi"
           :replicas {:sync 1}}
+   :backup {:period "1m"
+            :pod-spec {:image "healthsamurai/backup-pg3:latest"
+                       #_:envFrom #_[{:configMap {}}
+                                     {:secretRef {}}]}}
    :config {:config {:shared_buffers "1GB"
                      :max_connections 100}}})
 
 (comment
 
-  (k8s/create perseus-cluster)
+  (k8s/patch perseus-cluster)
 
   (clojure.pprint/pprint
    (k8s/find (model/postgres-deployment (:replica (ut/my-pginstances perseus-cluster))))
@@ -52,6 +56,8 @@
 
   (clojure.pprint/pprint (cluster/load-pods perseus-cluster))
 
+  (update-status (k8s/find perseus-cluster) {:phase "init"})
+  
   (update-status (k8s/find perseus-cluster) {:phase "waiting-initialization"})
   (update-status (k8s/find perseus-cluster) {:phase "monitoring"})
   (update-status (k8s/find perseus-cluster) {:phase "error-state"})

@@ -3,7 +3,8 @@
             [clojure.string :as str]
             [cheshire.core :as json]
             [pg3.naming :as naming]
-            [k8s.core :as k8s]))
+            [k8s.core :as k8s]
+            [unifn.core :as u]))
 
 (def api-group "pg3.io")
 
@@ -27,6 +28,16 @@
                   :plural naming/instance-resource-plural}
           :scope "Namespaced"}})
 
+(def backup-definition
+  {:apiVersion "apiextensions.k8s.io/v1beta1"
+   :kind "CustomResourceDefinition"
+   :metadata {:name naming/backup-resource-name}
+   :spec {:group naming/api-group
+          :version naming/api-version
+          :names {:kind naming/backup-resource-kind
+                  :plural naming/backup-resource-plural}
+          :scope "Namespaced"}})
+
 (defn inherited-namespace [x]
   (or (get-in x [:metadata :namespace]) "default"))
 
@@ -44,6 +55,43 @@
                 {:pg-cluster (naming/resource-name cluster)
                  :role role})
    :config (:config cluster)})
+
+(defn full-backup-spec [cluster spec]
+  (when spec
+    {:period (get spec :period "1d")
+     :pod-spec
+     {:apiVersion "v1"
+      :kind "Pod"
+      :metadata {:namespace (inherited-namespace cluster)
+                 :labels (naming/cluster-labels cluster)}
+      :spec {:containers [(u/deep-merge
+                           (:pod-spec spec)
+                           {:name "backup"
+                            :image "healthsamurai/backup-pg3:latest"
+                            :env
+                            [{:name "PG_USER" :value "postgres"}
+                             {:name "PG_HOST" :value (naming/service-name (naming/resource-name cluster))}
+                             {:name "PG_PORT" :value "5432"}
+                             {:name "PGPASSWORD" :valueFrom {:secretKeyRef
+                                                             {:name (naming/secret-name
+                                                                     (naming/resource-name cluster))
+                                                              :key "password"}}}]})]
+             :restartPolicy "Never"}}}))
+
+(defn backup-spec [cluster]
+  {:kind naming/backup-resource-kind
+   :apiVersion naming/api
+   :metadata {:name (naming/backup-name cluster)
+              :namespace (inherited-namespace cluster)
+              :labels (naming/cluster-labels cluster)}
+   :spec (merge (full-backup-spec cluster (:backup cluster))
+                {:pg-cluster (naming/resource-name cluster)
+                 :enabled? (contains? cluster :backup)})})
+
+(defn backup-pod-spec [backup]
+  (-> backup
+      (get-in [:spec :pod-spec])
+      (assoc-in [:metadata :name] (naming/backup-pod-name backup))))
 
 (def default-volume-annotiations {"volume.beta.kubernetes.io/storage-class" "standard"})
 
