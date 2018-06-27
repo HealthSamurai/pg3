@@ -162,7 +162,8 @@
         ns (get-in replica [:metadata :namespace])
         cluster {:metadata {:namespace ns
                             :name cluster-name}}
-        master (:master (ut/my-pginstances cluster))]
+        master (:master
+                (ut/pginstances (get-in cluster [:metadata :namespace]) (naming/service-name (naming/resource-name cluster))))]
     {::master master}))
 
 (defmethod u/*fn ::wait-master [{master ::master}]

@@ -1,6 +1,6 @@
 (ns pg3.naming
   (:require [clojure.string :as str]
-            [pg3.utils :as ut]))
+            #_[pg3.utils :as ut]))
 
 ;; The system is very sensitive to naming changes
 ;; be carefull and backward compatible here
@@ -62,8 +62,12 @@
 (defn backup-name [cluster]
   (cluster-name cluster))
 
+;; TODO refactor utils and fix cyrcular import issue
+(defn timestamp-string []
+  (str (.getTime (java.util.Date.))))
+
 (defn backup-pod-name [backup]
-  (str (get-in backup [:metadata :name]) "-" (ut/timestamp-string)))
+  (str (get-in backup [:metadata :name]) "-" (timestamp-string)))
 
 (defn cluster-labels [cluster]
   {:system "pg3"
