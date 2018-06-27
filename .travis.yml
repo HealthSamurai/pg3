@@ -17,5 +17,5 @@ script:
 - docker build . -t healthsamurai/pg3:0.0.1
 - kubectl create namespace pg3-controller 
 - kubectl -n pg3-controller apply -f deploy-controller/setup.yml 
-- kubeclt -n pg3-controller get deployments
-- kubeclt -n pg3-controller get pods
+- kubectl -n pg3-controller get deployments
+- kubectl -n pg3-controller get pods
