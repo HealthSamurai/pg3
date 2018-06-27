@@ -92,7 +92,7 @@
 (defmethod u/*fn ::check-instance-disk [{pod ::pod errors ::errors :or {errors []}}]
   (when pod
     (let [cmd {:executable "/bin/bash"
-               :args ["-c" "df -h /data --output=pcent | grep -P -o \\\\d+"]}
+               :args ["-c" "df -h /data | awk '{print $5}' | grep -oE \\\\d+"]}
           {status :status message :message} (k8s/exec pod cmd)
           role (str/capitalize (get-in pod [:metadata :labels :role]))]
       (cond

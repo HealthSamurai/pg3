@@ -169,7 +169,7 @@
 local all  all                trust
 host  all  all 127.0.0.1/32   trust
 host  all  all ::1/128        trust
-host  all all all md5
+host  all  all all            md5
 host  replication postgres 0.0.0.0/0 md5
 ")
 
@@ -179,7 +179,9 @@ host  replication postgres 0.0.0.0/0 md5
             ["#!/bin/bash"
              "set -e"
              "set -x"
+             "env"
              "export PATH=/pg/bin:$PATH"
+             "export LD_LIBRARY_PATH=/pg/lib"
              (format "initdb --data-checksums -E 'UTF-8' --lc-collate='en_US.UTF-8' --lc-ctype='en_US.UTF-8' -D %s" naming/data-path) 
              "echo start "
              (str "cp " naming/config-path "/postgresql.conf " naming/data-path "/postgresql.conf")
@@ -242,7 +244,7 @@ host  replication postgres 0.0.0.0/0 md5
    (str/join " && "
              [(format "chown postgres -R %s" naming/data-path)
               (format "chown postgres -R %s" naming/wals-path)
-              (format "su -m -l postgres -c 'bash %s/initscript'" naming/config-path)])])
+              (format "su -m postgres -c 'bash %s/initscript'" naming/config-path)])])
 
 (defn db-pod [inst-spec opts]
   {:kind "Pod"
@@ -300,10 +302,9 @@ host  replication postgres 0.0.0.0/0 md5
 (defn postgres-pod [inst-spec opts]
   (db-pod
    (assoc-in inst-spec [:metadata :labels :type] "instance")
-   (merge opts {:command
-                ["gosu", "postgres", "postgres",
-                 (str "--config-file=" naming/config-path "/postgresql.conf")
-                 (str "--hba-file=" naming/config-path "/pg_hba.conf")]})))
+   (merge opts {:command ["su" "-m" "postgres" "-c"
+                          (format "export LD_LIBRARY_PATH=/pg/lib:/pg/lib/postgresql && /pg/bin/postgres --config-file=%1$s/postgresql.conf --hba-file=%1$s/pg_hba.conf"
+                                  naming/config-path)]})))
 
 (defn postgres-deployment [inst-spec]
   (let [pod (postgres-pod inst-spec

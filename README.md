@@ -15,7 +15,12 @@ kubectl apply deplyment.yaml
 ## Development
 
 
-Using minikube
+Using minikube  
+
+To cleanup cluster you can use this command  
+```
+kubectl -n pg3 delete pgbackups --all && kubectl delete pgcluster -n pg3 --all && kubectl delete pginstance -n pg3 --all  && kubectl delete all -n pg3 -l system=pg3 && kubectl delete -n pg3 persistentvolumeclaim --all
+```
 
 
 ## License

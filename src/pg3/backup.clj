@@ -23,6 +23,7 @@
 
 (defmethod u/*fn ::schedule-backup [{backup :resource}]
   (let [pod-spec (model/backup-pod-spec backup)
+        ;; pod-spec (assoc-in pod-spec [:spec :containers 0 :command] ["env"])
         result (k8s/create pod-spec)]
     (if (= (:kind result) "Status")
       {::u/status :error
@@ -39,33 +40,27 @@
       {::pod pod})))
 
 (defmethod u/*fn ::check-status [{pod ::pod}]
-  (case (get-in pod [:status :phase])
-    "Succeeded" (let [result (k8s/logs pod)
-                      now (ut/now-string)]
-                  {::last-backup {:lastUpdate now
-                                  :name result}})
-    "Failed" {::u/status :error
-              ::u/message (str "\n" (str/join "\n" (-> pod
-                                                       (get-in [:status :containerStatuses])
-                                                       (->> (map (get-in [:state :terminated :message]))))))}
-    {::u/status :stop}))
+  (let [result (k8s/logs pod)]
+    (case (get-in pod [:status :phase])
+     "Succeeded" (let [now (ut/now-string)]
+                   {::last-backup {:lastUpdate now
+                                   :name result}})
+     "Failed" {::u/status :error
+               ::u/message (str "\n" result)}
+     {::u/status :stop})))
 
 (defmethod u/*fn ::delete-pod [{backup-spec :resource
                                 last-backup ::last-backup
                                 pod ::pod}]
-  (let [result {}#_(k8s/delete pod)]
+  (let [result (k8s/delete pod)]
     (if (= (:kind result) "Status")
       {::u/status :error
        ::u/message (str result)}
       {::u/status :success
-       ::u/message (str "Backup for " (get-in backup-spec [:spec :pg-cluster]) "done.\n" (:name last-backup))
+       ::u/message (str "Backup for " (get-in backup-spec [:spec :pg-cluster]) " is done.\n" (:name last-backup))
        :status-data {:last-backup last-backup}})))
 
 (defmethod u/*fn ::load-pg-instances [{backup :resource}]
-  (println "!!!!!!!!!!"
-           (get-in backup [:metadata :namespace]) (get-in backup [:metadata :labels :service])
-           (ut/pginstances (get-in backup [:metadata :namespace]) (get-in backup [:metadata :labels :service]))
-           )
   {::ut/pginstances (ut/pginstances (get-in backup [:metadata :namespace]) (get-in backup [:metadata :labels :service]))})
 
 (def fsm-backup
@@ -91,5 +86,4 @@
 (defn watch []
   (doseq [backup (:items (k8s/query {:kind naming/backup-resource-kind
                                       :apiVersion naming/api}))]
-    (println backup)
     (fsm/process-state fsm-backup backup )))

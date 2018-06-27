@@ -99,7 +99,7 @@
     (-> res
      :body
      (json/parse-string keyword)
-     (resolve-secrets))))
+     #_(resolve-secrets))))
 
 (defn delete-collection [opts]
   (let [uri   (resource-url opts (select-keys opts [:labelSelector ]))]
