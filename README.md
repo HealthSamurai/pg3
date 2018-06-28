@@ -1,4 +1,4 @@
-# pg3
+# Postgres cluster controller for kubernetes [![Build Status](https://travis-ci.org/HealthSamurai/pg3.svg?branch=master)](https://travis-ci.org/HealthSamurai/pg3)
 
 Kubernetes custom controller for HA PostgreSQL
 
