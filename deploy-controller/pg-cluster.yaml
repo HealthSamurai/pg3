@@ -7,8 +7,7 @@ metadata:
     service: star-wars
     system: pg3
 spec:
-  image: aidbox/aidboxdb
-  version: passive
+  image: aidbox/db:passive-latest
   size: 1Gi
   replicas:
     sync: 1

@@ -91,7 +91,7 @@
                   (when params (str "?" (to-query-string params)))))))
 
 (defn query [cfg & parts]
-  (println "QUERY" (apply resource-url cfg parts))
+  ;; (println "QUERY" (apply resource-url cfg parts))
   (let [res @(http-client/get
               (apply resource-url cfg parts)
               {:headers (merge default-headers {"Content-Type" "application/json"})
@@ -103,7 +103,7 @@
 
 (defn delete-collection [opts]
   (let [uri   (resource-url opts (select-keys opts [:labelSelector ]))]
-    (println "DELETE " uri)
+    ;; (println "DELETE " uri)
     (-> @(http-client/delete
           uri
           {:headers (merge default-headers {"Content-Type" "application/json"})
@@ -114,7 +114,6 @@
 ;; ReplicationController, ReplicaSet, StatefulSet, DaemonSet, and Deployment
 
 (defn get-json-patch [res nres]
-  (println res)
   (let [-res (walk/stringify-keys (-> res
                                       (assoc :metadata (dissoc (:metadata res) :uid :resourceVersion :creationTimestamp :selfLink))
                                       (dissoc :status :selfLink)))
@@ -128,7 +127,7 @@
 
 (defn create [res]
   (let [u (resource-url res)]
-    (println "POST " u)
+    ;; (println "POST " u)
     (-> @(http-client/post
           u
           {:body (json/generate-string (walk/stringify-keys res))
@@ -166,7 +165,7 @@
     (if-not (or (number? res) (= "Failure" (get res :status)))
       (let [diff (patch/diff (walk/stringify-keys res)
                              (walk/stringify-keys (*merge res nres)))]
-        (println "PATCH" diff)
+        ;; (println "PATCH" diff)
         (->
          @(http-client/patch
            (str (resource-url res (get-in res [:metadata :name])))
@@ -213,7 +212,7 @@
                            :stderr "true"
                            :stdout "true"})
         url (str/replace url #"http" "ws")
-        _ (println "EXEC" url)
+        ;; _ (println "EXEC" url)
         client (WebSocketClient. (SslContextFactory. true))
         response-data (atom {:stdout ""
                              :stderr ""

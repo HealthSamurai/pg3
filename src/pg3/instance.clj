@@ -39,11 +39,9 @@
                     (println "PVC STATUS:" (get-in pvc [:status :phase]))
                     (and acc (= "Bound" (get-in pvc [:status :phase])))))
                 true vols)]
-    (if ready?
+    (when ready?
       {::u/status :success
-       ::u/message "Instance volumes ready"}
-      ;; TODO: maybe add one more status for sending telegram message
-      {::u/status :pending})))
+       ::u/message "Instance volumes ready"})))
 
 (defn find-resource [kind ns res-name]
   (k8s/find {:kind kind
@@ -89,7 +87,7 @@
        ::u/message (str role " ready to start")}
 
       (#{"Pending" "Running"} phase)
-      {::u/status :pending}
+      {}
 
       :else
       {::u/status :error
@@ -167,10 +165,9 @@
     {::master master}))
 
 (defmethod u/*fn ::wait-master [{master ::master}]
-  (if (= (get-in master [:status :phase]) "active")
+  (when (= (get-in master [:status :phase]) "active")
     {::u/status :success
-     ::u/message "Master was started"}
-    {::u/status :pending}))
+     ::u/message "Master was started"}))
 
 (def fsm-replica
   (merge

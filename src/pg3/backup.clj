@@ -14,8 +14,7 @@
 (defmethod u/*fn ::time-for-backup? [{backup :resource}]
   (let [last-updated (get-in backup [:status :last-backup :lastUpdated])
         backup-period (ut/parse-period (get-in backup [:spec :period]))
-        since-last-backup (ut/since last-updated)
-        _ (println since-last-backup)]
+        since-last-backup (ut/since last-updated)]
     (when (or (nil? last-updated)
               (> since-last-backup backup-period))
       {::u/status :success
@@ -23,7 +22,6 @@
 
 (defmethod u/*fn ::schedule-backup [{backup :resource}]
   (let [pod-spec (model/backup-pod-spec backup)
-        ;; pod-spec (assoc-in pod-spec [:spec :containers 0 :command] ["env"])
         result (k8s/create pod-spec)]
     (if (= (:kind result) "Status")
       {::u/status :error

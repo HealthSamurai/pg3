@@ -192,11 +192,11 @@ host  replication postgres 0.0.0.0/0 md5
 (defn config-map [cluster]
   {:kind "ConfigMap"
    :apiVersion "v1"
-   :metadata {:name (naming/config-map-name (get-in cluster [:metadata :name])) 
+   :metadata {:name (naming/config-map-name (get-in cluster [:metadata :name]))
               :labels (inherited-labels cluster)
               :namespace (inherited-namespace cluster)}
    :data {"postgresql.conf" (pg-config cluster)
-          "pg_hba.conf" (pg-hba cluster) 
+          "pg_hba.conf" (pg-hba cluster)
           "initscript" (init-script cluster)}})
 
 (defn rand-str [len]
@@ -207,7 +207,7 @@ host  replication postgres 0.0.0.0/0 md5
    :apiVersion "v1"
    :type "Opaque"
    :metadata {:name (naming/secret-name (get-in cluster [:metadata :name]))
-              :labels (inherited-labels cluster) 
+              :labels (inherited-labels cluster)
               :namespace (inherited-namespace cluster)}
    :data {:username (k8s/base64-encode "postgres")
           :password (k8s/base64-encode (or pass (rand-str 10)))}})
