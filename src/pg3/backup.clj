@@ -12,7 +12,7 @@
     {::u/status :stop}))
 
 (defmethod u/*fn ::time-for-backup? [{backup :resource}]
-  (let [last-updated (get-in backup [:status :last-backup :lastUpdated])
+  (let [last-updated (get-in backup [:status :last-backup :lastUpdate])
         backup-period (ut/parse-period (get-in backup [:spec :period]))
         since-last-backup (ut/since last-updated)]
     (when (or (nil? last-updated)
