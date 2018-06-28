@@ -179,10 +179,7 @@ host  replication postgres 0.0.0.0/0 md5
             ["#!/bin/bash"
              "set -e"
              "set -x"
-             "env"
-             "export PATH=/pg/bin:$PATH"
-             "export LD_LIBRARY_PATH=/pg/lib"
-             (format "initdb --data-checksums -E 'UTF-8' --lc-collate='en_US.UTF-8' --lc-ctype='en_US.UTF-8' -D %s" naming/data-path) 
+             (format "initdb --data-checksums -E 'UTF-8' --lc-collate='en_US.UTF-8' --lc-ctype='en_US.UTF-8' -D %s" naming/data-path)
              "echo start "
              (str "cp " naming/config-path "/postgresql.conf " naming/data-path "/postgresql.conf")
              (str "cp " naming/config-path "/pg_hba.conf " naming/data-path "/pg_hba.conf")
@@ -214,9 +211,6 @@ host  replication postgres 0.0.0.0/0 md5
               :namespace (inherited-namespace cluster)}
    :data {:username (k8s/base64-encode "postgres")
           :password (k8s/base64-encode (or pass (rand-str 10)))}})
-
-(defn image [{spec :spec}]
-  (str (:image spec) ":" (:version spec)))
 
 (defn volumes [inst-spec]
   [(let [nm (naming/data-volume-name inst-spec)]
@@ -256,8 +250,9 @@ host  replication postgres 0.0.0.0/0 md5
           :volumes (volumes inst-spec)
           :containers
           [{:name "pg"
-            :image (image inst-spec)
+            :image (get-in inst-spec [:spec :image])
             :ports [{:containerPort 5432}]
+            :imagePullPolicy :Always
             :env
             [{:name "PGUSER" :value "postgres"}
              {:name "PGPASSWORD" :valueFrom {:secretKeyRef
@@ -281,8 +276,8 @@ host  replication postgres 0.0.0.0/0 md5
    (str/join " && "
              [(format "rm -rf %s/*" naming/data-path)
               (format "echo '%s:5432:*:$PGUSER:$PGPASSWORD' >> ~/.pgpass" host)
-              (format "/pg/bin/psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
-              (format "/pg/bin/pg_basebackup -D %s -Fp -h %s -U $PGUSER -w -R -Xs -c fast -l %s -P -v" naming/data-path host color)
+              (format "psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
+              (format "pg_basebackup -D %s -Fp -h %s -U $PGUSER -w -R -Xs -c fast -l %s -P -v" naming/data-path host color)
               (format "echo \"primary_slot_name = '%s'\" >> %s/recovery.conf" color naming/data-path)
               (format "echo \"standby_mode = 'on'\" >> %s/recovery.conf" naming/data-path)
               (format "chown postgres -R %s" naming/data-path)
@@ -294,8 +289,8 @@ host  replication postgres 0.0.0.0/0 md5
     (db-pod
      (assoc-in inst-spec [:metadata :labels :type] "init")
      {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
-                       :restartPolicy "Never"
-                       :command (init-replica-command host (get-in inst-spec [:metadata :labels :color]))})))
+      :restartPolicy "Never"
+      :command (init-replica-command host (get-in inst-spec [:metadata :labels :color]))})))
 
 
 ;; TODO liveness https://github.com/kubernetes/kubernetes/issues/7891
@@ -303,7 +298,7 @@ host  replication postgres 0.0.0.0/0 md5
   (db-pod
    (assoc-in inst-spec [:metadata :labels :type] "instance")
    (merge opts {:command ["su" "-m" "postgres" "-c"
-                          (format "export LD_LIBRARY_PATH=/pg/lib:/pg/lib/postgresql && /pg/bin/postgres --config-file=%1$s/postgresql.conf --hba-file=%1$s/pg_hba.conf"
+                          (format "postgres --config-file=%1$s/postgresql.conf --hba-file=%1$s/pg_hba.conf"
                                   naming/config-path)]})))
 
 (defn postgres-deployment [inst-spec]

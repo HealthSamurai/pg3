@@ -25,8 +25,7 @@
               :namespace "pg3"
               :labels {:service "pegasus"
                        :system "pg3"}}
-   :spec {:image "aidbox/db"
-          :version "passive-latest"
+   :spec {:image "aidbox/db:passive-latest"
           :size "1Gi"
           :replicas {:sync 1}}
    :backup {:period "1m"
@@ -57,7 +56,7 @@
   (clojure.pprint/pprint (cluster/load-pods perseus-cluster))
 
   (update-status (k8s/find perseus-cluster) {:phase "init"})
-  
+
   (update-status (k8s/find perseus-cluster) {:phase "waiting-initialization"})
   (update-status (k8s/find perseus-cluster) {:phase "monitoring"})
   (update-status (k8s/find perseus-cluster) {:phase "error-state"})
