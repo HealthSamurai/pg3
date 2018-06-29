@@ -202,15 +202,18 @@
                :insecure? true})]
     (:body res)))
 
-(defn exec [cfg command]
+(defn exec [cfg command & [container-name]]
   (let [cfg (assoc cfg
                    :apiVersion "v1"
                    :kind "pod")
         url (resource-url cfg
                           (str (or (:id cfg) (get-in cfg [:metadata :name])) "/exec")
-                          {:command (concat [(:executable command)] (:args command))
-                           :stderr "true"
-                           :stdout "true"})
+                          (merge
+                           {:command (concat [(:executable command)] (:args command))
+                            :stderr "true"
+                            :stdout "true"}
+                           (when container-name
+                             {:container container-name})))
         url (str/replace url #"http" "ws")
         ;; _ (println "EXEC" url)
         client (WebSocketClient. (SslContextFactory. true))

@@ -93,7 +93,7 @@
   (when pod
     (let [cmd {:executable "/bin/bash"
                :args ["-c" "df -h /data | awk '{print $5}' | grep -oE \\\\d+"]}
-          {status :status message :message} (k8s/exec pod cmd)
+          {status :status message :message} (k8s/exec pod cmd "pg")
           role (str/capitalize (get-in pod [:metadata :labels :role]))]
       (cond
         (and (= status :succeed)
@@ -107,7 +107,7 @@
   (when pod
     (let [cmd {:executable "psql"
                :args ["-c" "select 1;"]}
-          {status :status message :message} (k8s/exec pod cmd)
+          {status :status message :message} (k8s/exec pod cmd "pg")
           role (str/capitalize (get-in pod [:metadata :labels :role]))]
       (when (= status :failure)
         {::errors (conj errors (format "%s • Postgresql not available: %s" role message))}))))
@@ -116,7 +116,7 @@
   (when pod
     (let [cmd {:executable "psql"
                :args ["-qtAX" "-c" "select count(*) from pg_stat_replication;"]}
-          {status :status message :message} (k8s/exec pod cmd)
+          {status :status message :message} (k8s/exec pod cmd "pg")
           role (str/capitalize (get-in pod [:metadata :labels :role]))]
       (cond (and (= status :succeed) (< (ut/read-int message) 1))
             {::errors (conj errors (format "%s • There is no any alive replica" role))}
