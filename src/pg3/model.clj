@@ -302,9 +302,16 @@ host  replication postgres 0.0.0.0/0 md5
                                   naming/config-path)]})))
 
 (defn postgres-deployment [inst-spec]
-  (let [pod (postgres-pod inst-spec
-                        {:name (str "pg3-" (get-in inst-spec [:spec :pg-cluster])
-                                    "-" (get-in inst-spec [:metadata :labels :color]))})]
+  (let [pod (-> (postgres-pod inst-spec
+                              {:name (str "pg3-" (get-in inst-spec [:spec :pg-cluster])
+                                          "-" (get-in inst-spec [:metadata :labels :color]))})
+                (update-in [:spec :containers]
+                           conj (merge
+                                 (get-in inst-spec [:spec :wal-export])
+                                 {:name "pg-wal-export"
+                                  :imagePullPolicy :Always
+                                  :env [{:name "WAL_DIR" :value naming/wals-path}]
+                                  :volumeMounts (volume-mounts inst-spec)})))]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
      :metadata (:metadata pod)

@@ -26,6 +26,9 @@
               :labels {:service "pegasus"
                        :system "pg3"}}
    :spec {:image "aidbox/db:passive-latest"
+          :wal-export {:image "ruscoder/wal-export-pg3:latest"
+                       #_:envFrom #_[{:configMap {}}
+                                     {:secretRef {}}]}
           :size "1Gi"
           :replicas {:sync 1}}
    :backup {:period "1m"
