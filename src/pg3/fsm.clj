@@ -25,8 +25,10 @@
       (let [action-stack (or (:action-stack state) [])
             result (u/*apply action-stack {:resource resource
                                            ::u/safe? true})]
-        (when-let [notify (get {:error t/error :success t/success} (::u/status result))]
-          (notify (name state-key) (::u/message result) resource))
+        (let [notify (get {:error t/error :success t/success} (::u/status result))
+              message (::u/message result)]
+          (when (and notify message)
+           (notify (name state-key) message resource)))
         (if-let [next-state (get state (::u/status result))]
           (update-status resource next-state (:status-data result))
           (when (timeout? state resource)

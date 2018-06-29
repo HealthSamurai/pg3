@@ -1,7 +1,6 @@
 ## CRITICAL
-* Сreate base backups
-* Human frendly notification
-* Notify when cluster was restored after the failing in monitoring phase
+* Create base backups
+* Human friendly notification
 
 ## MEDIUM 
 * Pluggable monitoring

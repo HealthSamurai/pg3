@@ -123,10 +123,19 @@
             (= status :failure)
             {::errors (conj errors (format "%s • %s" role message))}))))
 
-(defmethod u/*fn ::calculate-monitoring-result [{errors ::errors}]
-  (when-not (empty? errors)
-    {::u/status :error
-     ::u/message (str "\n" (str/join "\n" errors))}))
+(defmethod u/*fn ::calculate-monitoring-result
+  [{{{failed-with-error :monitoring-failed-with-error} :status} :resource errors ::errors}]
+  (cond
+    (not (empty? errors)) {::u/status :error
+                           ::u/message (str "\n" (str/join "\n" errors))}
+    failed-with-error {::u/status :success
+                       ::u/message "Cluster recovered after a monitoring error"
+                       :status-data {:monitoring-failed-with-error false}}
+    :else {}))
+
+(defmethod u/*fn ::set-monitoring-error-flag [_]
+  {:status-data {:monitoring-failed-with-error true}
+   ::u/status :success})
 
 (def fsm-main
   {:init {:action-stack [::ensure-cluster-config
@@ -154,7 +163,10 @@
                                {::u/fn ::check-postgres}
                                ::calculate-monitoring-result
                                #_::check-replication]
-                :error :monitoring}
+                :success :monitoring
+                :error :monitoring-error}
+   :monitoring-error {:action-stack [::set-monitoring-error-flag]
+                      :success :monitoring}
    :error-state {}})
 
 (defn watch []
