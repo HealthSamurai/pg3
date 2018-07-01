@@ -38,18 +38,28 @@
        ::u/message (str result)})))
 
 (defmethod u/*fn ::ensure-cluster-config [{cluster :resource}]
-  (strict-patch (model/config-map cluster)))
+  (let [cluster-name (get-in cluster [:metadata :name])]
+    (strict-patch (-> cluster
+                      model/config-map
+                      (ut/add-labels {:pgcluster cluster-name})))))
 
 (defmethod u/*fn ::ensure-cluster-secret [{cluster :resource}]
-  (strict-patch (model/secret cluster)))
+  (let [cluster-name (get-in cluster [:metadata :name])]
+    (strict-patch (-> cluster
+                      model/secret
+                      (ut/add-labels {:pgcluster cluster-name})))))
 
 (defmethod u/*fn ::ensure-cluster-backup [{cluster :resource}]
-  (strict-patch (model/backup-spec cluster)))
+  (let [cluster-name (get-in cluster [:metadata :name])]
+    (strict-patch (-> cluster
+                      model/backup-spec
+                      (ut/add-labels {:pgcluster cluster-name})))))
 
 (defmethod u/*fn ::ensure-instance [{role ::role cluster :resource :as arg}]
   (let [instance (get-in arg [::ut/pginstances role])
         color (get-in arg [::colors role])
-        instance (or instance (model/instance-spec cluster color (name role)))]
+        instance (or instance (model/instance-spec cluster color (name role)))
+        instance (ut/add-labels instance {:pgcluster (get-in cluster [:metadata :name])})]
     (strict-patch instance)))
 
 (defmethod u/*fn ::finish-init [arg]

@@ -19,14 +19,17 @@
       (k8s/patch spec))))
 
 (defmethod u/*fn ::init-instance-volumes [{inst :resource}]
-  (let [data-v (pvc-patch (model/instance-data-volume-spec inst))
-        wals-v (pvc-patch (model/instance-wals-volume-spec inst))]
+  (let [instance-name (naming/resource-name inst)
+        data-volume-spec (-> inst model/instance-data-volume-spec (ut/add-labels {:pginstance instance-name}))
+        data-v (pvc-patch data-volume-spec)
+        wals-volume-spec (-> inst model/instance-wals-volume-spec (ut/add-labels {:pginstance instance-name}))
+        wals-v (pvc-patch wals-volume-spec)]
     (if (every? pvc? [data-v wals-v])
       {::u/status :success
-       :volumes [data-v wals-v]
-       ::u/message "Instance volumes requested"}
+        :volumes [data-v wals-v]
+        ::u/message "Instance volumes requested"}
       {::u/status :error
-       ::u/message (str "Instance volumes request error: " data-v wals-v)})))
+        ::u/message (str "Instance volumes request error: " data-v wals-v)})))
 
 (defmethod u/*fn ::volumes-ready? [{inst :resource}]
   (let [vols (get-in inst [:status :volumes])
@@ -67,14 +70,15 @@
       {::u/status :success
        ::u/message (str role " already exists")
        :initPod (get-in pod [:metadata :name])}
-      (let [pod (init-pod-fn instance)
-            res (k8s/create pod)]
+      (let [instance-name (naming/resource-name instance)
+            pod-spec (-> instance init-pod-fn (ut/add-labels {:pginstance instance-name}))
+            res (k8s/create pod-spec)]
         (if (= (:kind res) "Status")
           {::u/status :error
            ::u/message (str res)}
           {::u/status :success
            ::u/message (str role " initialize started")
-           :status-data {:initPod (get-in pod [:metadata :name])}})))))
+           :status-data {:initPod (get-in pod-spec [:metadata :name])}})))))
 
 (defmethod u/*fn ::instance-inited? [{inst :resource
                                       init-pod-fn ::init-pod-fn}]
@@ -95,7 +99,9 @@
 
 (defmethod u/*fn ::start-instance [{inst :resource}]
   (let [role (instance-role inst)
-        res (k8s/patch (model/postgres-deployment inst))]
+        instance-name (naming/resource-name inst)
+        deployment-spec (-> inst model/postgres-deployment (ut/add-labels {:pginstance instance-name}))
+        res (k8s/patch deployment-spec)]
     (if (= (:kind res) "Status")
       {::u/status :error
        ::u/message (str res)}
@@ -111,7 +117,9 @@
 (defmethod u/*fn ::start-instance-service [{inst :resource
                                             service-fn ::service-fn}]
   (let [role (instance-role inst)
-        res (k8s/patch (service-fn inst))]
+        instance-name (naming/resource-name inst)
+        service-spec (-> inst service-fn (ut/add-labels {:pginstance instance-name}))
+        res (k8s/patch service-spec)]
     (if (= (:kind res) "Status")
       {::u/status :error
        ::u/message (str res)}
