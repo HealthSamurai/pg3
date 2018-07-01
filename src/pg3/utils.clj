@@ -74,3 +74,7 @@
 
 (defn timestamp-string []
   (str (.getTime (java.util.Date.))))
+
+(defn add-labels [resource labels]
+  (let [resource-labels (get-in resource [:metadata :labels] {})]
+    (assoc-in resource [:metadata :labels] (merge resource-labels labels))))

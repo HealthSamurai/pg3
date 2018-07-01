@@ -4,6 +4,7 @@
             [cheshire.core :as json]
             [pg3.naming :as naming]
             [k8s.core :as k8s]
+            [pg3.utils :as ut]
             [unifn.core :as u]))
 
 (def api-group "pg3.io")
@@ -39,10 +40,10 @@
           :scope "Namespaced"}})
 
 (defn inherited-namespace [x]
-  (or (get-in x [:metadata :namespace]) "default"))
+  (get-in x [:metadata :namespace] "default"))
 
 (defn inherited-labels [x]
-  (or (get-in x [:metadata :labels]) {}))
+  (get-in x [:metadata :labels] {}))
 
 (defn instance-spec [cluster color role]
   {:kind naming/instance-resource-kind
@@ -113,7 +114,7 @@
 (defn instance-data-volume-spec [inst-spec]
   (volume-spec
    {:name (naming/data-volume-name inst-spec)
-    :labels (merge (inherited-labels inst-spec) {:type "data"})
+    :metadata {:labels (merge (inherited-labels inst-spec) {:type "data"})}
     :namespace (inherited-namespace inst-spec)
     :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
     :storage (get-in inst-spec [:spec :size])}))
@@ -121,7 +122,7 @@
 (defn instance-wals-volume-spec [inst-spec]
   (volume-spec
    {:name (naming/wals-volume-name inst-spec)
-    :labels (merge (inherited-labels inst-spec) {:type "wal"})
+    :metadata {:labels (merge (inherited-labels inst-spec) {:type "wal"})}
     :namespace (inherited-namespace inst-spec)
     :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
     :storage (get-in inst-spec [:spec :size])}))
@@ -311,7 +312,9 @@ host  replication postgres 0.0.0.0/0 md5
                                  {:name "pg-wal-export"
                                   :imagePullPolicy :Always
                                   :env [{:name "WAL_DIR" :value naming/wals-path}]
-                                  :volumeMounts (volume-mounts inst-spec)})))]
+                                  :volumeMounts (volume-mounts inst-spec)})))
+        instance-name (naming/resource-name inst-spec)
+        pod (ut/add-labels pod {:pginstance instance-name})]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
      :metadata (:metadata pod)
