@@ -4,7 +4,6 @@
 
 ## MEDIUM 
 * Pluggable monitoring
-* Pluggable notification
 * Initialize replica from WAL files first
 * New master selection
 

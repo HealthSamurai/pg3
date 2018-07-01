@@ -14,6 +14,9 @@
 (def chatid (or (System/getenv "TELEGRAM_CHATID")
                 (k8s/secret :pg3 :TELEGRAM_CHATID)))
 
+(def notification-enabled? (or (System/getenv "NOTIFICATION_ENABLED")
+                               (k8s/secret :pg3 :NOTIFICATION_ENABLED)))
+
 (defn notify [msg]
   (t/send-text token chatid {:parse_mode "Markdown"} msg))
 
@@ -33,10 +36,11 @@
 (def noEmoji (apply str (Character/toChars 10060)))
 
 (defn notify* [emoji phase text res]
-  (let [msg (str emoji " " (make-message phase text res))]
-    (if mock-path
-      (spit mock-path (str msg "\n") :append true)
-      (notify msg))))
+  (if notification-enabled?
+    (let [msg (str emoji " " (make-message phase text res))]
+      (if mock-path
+        (spit mock-path (str msg "\n") :append true)
+        (notify msg)))))
 
 (def error (partial notify* noEmoji))
 (def success (partial notify* okEmoji))
