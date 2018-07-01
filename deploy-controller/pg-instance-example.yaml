@@ -1,0 +1,30 @@
+apiVersion: pg3.io/v1
+config:
+  config:
+    max_connections: 100
+    shared_buffers: 1GB
+kind: PgInstance
+metadata:
+  clusterName: ""
+  creationTimestamp: 2018-07-01T22:11:26Z
+  generation: 1
+  labels:
+    color: darksalmon
+    pgcluster: perseus
+    role: replica
+    service: pg3-perseus
+    system: pg3
+  name: pg3-perseus-darksalmon
+  namespace: pg3
+  resourceVersion: "150411"
+  selfLink: /apis/pg3.io/v1/namespaces/pg3/pginstances/pg3-perseus-darksalmon
+  uid: b28caa68-7d7b-11e8-ba70-080027a39d64
+spec:
+  image: aidbox/db:passive-latest
+  pg-cluster: perseus
+  replicas:
+    sync: 1
+  role: replica
+  size: 1Gi
+  wal-export:
+    image: ruscoder/wal-export-pg3:latest
