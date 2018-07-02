@@ -63,7 +63,8 @@
 (def fsm-backup
   {:init {:action-stack [::load-pg-instances
                          {::u/fn ::ut/cluster-active?}
-                         {::u/fn ::ut/success}]
+                         {::u/fn ::ut/success
+                          ::ut/message "Backup schedule was initialized"}]
           :success :wait-for-new-backup
           :error :error-state}
    :wait-for-new-backup {:action-stack [::backup-enable?

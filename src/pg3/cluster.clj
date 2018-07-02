@@ -43,8 +43,16 @@
 (defmethod u/*fn ::ensure-cluster-secret [{cluster :resource}]
   (strict-patch (model/secret cluster)))
 
-(defmethod u/*fn ::ensure-cluster-backup [{cluster :resource}]
-  (strict-patch (model/backup-spec cluster)))
+(defmethod u/*fn ::ensure-cluster-backup-item [{cluster :resource backup-item ::backup-item}]
+  (strict-patch (model/backup-spec cluster backup-item)))
+
+(defmethod u/*fn ::ensure-cluster-backup [{cluster :resource :as arg}]
+  (dissoc
+   (u/*apply (->> (:backup cluster)
+                  (mapv (fn [item] {::u/fn ::ensure-cluster-backup-item
+                                    ::backup-item item})))
+             arg)
+   ::backup-item))
 
 (defmethod u/*fn ::ensure-instance [{role ::role cluster :resource :as arg}]
   (let [instance (get-in arg [::ut/pginstances role])

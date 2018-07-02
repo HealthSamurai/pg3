@@ -67,6 +67,7 @@
       :spec {:containers [(u/deep-merge
                            (:pod-spec spec)
                            {:name "backup"
+                            ;; TODO: why it overrides :pod-spec ???
                             :image "healthsamurai/backup-pg3:latest"
                             :env
                             [{:name "PG_USER" :value "postgres"}
@@ -78,15 +79,15 @@
                                                               :key "password"}}}]})]
              :restartPolicy "Never"}}}))
 
-(defn backup-spec [cluster]
+(defn backup-spec [cluster backup]
   {:kind naming/backup-resource-kind
    :apiVersion naming/api
-   :metadata {:name (naming/backup-name cluster)
+   :metadata {:name (naming/backup-name cluster backup)
               :namespace (inherited-namespace cluster)
               :labels (naming/cluster-labels cluster)}
-   :spec (merge (full-backup-spec cluster (:backup cluster))
+   :spec (merge (full-backup-spec cluster backup)
                 {:pg-cluster (naming/resource-name cluster)
-                 :enabled? (contains? cluster :backup)})})
+                 :enabled? true})})
 
 (defn backup-pod-spec [backup]
   (-> backup

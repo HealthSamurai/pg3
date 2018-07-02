@@ -31,11 +31,18 @@
                                      {:secretRef {}}]}
           :size "1Gi"
           :replicas {:sync 1}}
-   :backup {:period "1m"
-            :pod-spec {:image "healthsamurai/backup-pg3:latest"
-                       :args ["sql"]
-                       #_:envFrom #_[{:configMap {}}
-                                     {:secretRef {}}]}}
+   :backup [{:period "1m"
+             :name "sql"
+             :pod-spec {:image "healthsamurai/backup-pg3:latest"
+                        :args ["sql"]
+                        #_:envFrom #_[{:configMap {}}
+                                      {:secretRef {}}]}}
+            {:period "1m"
+             :name "base"
+             :pod-spec {:image "healthsamurai/backup-pg3:latest"
+                        :args ["base"]
+                        #_:envFrom #_[{:configMap {}}
+                                      {:secretRef {}}]}}]
    :config {:config {:shared_buffers "1GB"
                      :max_connections 100}}})
 

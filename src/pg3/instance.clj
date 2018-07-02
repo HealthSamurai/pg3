@@ -120,7 +120,7 @@
 
 (def fsm-base
   {:init {:action-stack [{::u/fn ::ut/success
-                          ::ut/message "Starting initialization..."}]
+                          ::ut/message "Initializing volumes..."}]
           :success :start-init}
    :start-init {:action-stack [::init-instance-volumes]
                 :success :waiting-volumes

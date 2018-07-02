@@ -59,8 +59,8 @@
        (when postfix
          (str "-" (str/join "-" postfix)))))
 
-(defn backup-name [cluster]
-  (cluster-name cluster))
+(defn backup-name [cluster backup]
+  (str (cluster-name cluster) "-" (:name backup)))
 
 ;; TODO refactor utils and fix cyrcular import issue
 (defn timestamp-string []
