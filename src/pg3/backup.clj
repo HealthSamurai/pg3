@@ -17,8 +17,7 @@
         since-last-backup (ut/since last-updated)]
     (when (or (nil? last-updated)
               (> since-last-backup backup-period))
-      {::u/status :success
-       ::u/message (str "Schedule backup for " (get-in backup [:spec :pg-cluster]))})))
+      {::u/status :success})))
 
 (defmethod u/*fn ::schedule-backup [{backup :resource}]
   (let [pod-spec (model/backup-pod-spec backup)
@@ -27,7 +26,6 @@
       {::u/status :error
        ::u/message (str result)}
       {::u/status :success
-       ::u/message (str "Starting backuping for " (get-in backup [:spec :pg-cluster]))
        :status-data {:pod-spec pod-spec}})))
 
 (defmethod u/*fn ::load-pod [{backup :resource}]
@@ -47,24 +45,25 @@
                ::u/message (str "\n" result)}
      {::u/status :stop})))
 
-(defmethod u/*fn ::delete-pod [{backup-spec :resource
-                                last-backup ::last-backup
-                                pod ::pod}]
+(defmethod u/*fn ::delete-pod [{pod ::pod}]
   (let [result (k8s/delete pod)]
-    (if (= (:kind result) "Status")
+    (when (= (:kind result) "Status")
       {::u/status :error
-       ::u/message (str result)}
-      {::u/status :success
-       ::u/message (str "Backup for " (get-in backup-spec [:spec :pg-cluster]) " is done.\n" (:name last-backup))
-       :status-data {:last-backup last-backup}})))
+       ::u/message (str result)})))
+
+(defmethod u/*fn ::backup-completed [{backup-spec :resource
+                                      last-backup ::last-backup}]
+  {::u/status :success
+   ::u/message (str "Backup for " (get-in backup-spec [:spec :pg-cluster]) " was done.\n" (:name last-backup))
+   :status-data {:last-backup last-backup}})
 
 (defmethod u/*fn ::load-pg-instances [{backup :resource}]
   {::ut/pginstances (ut/pginstances (get-in backup [:metadata :namespace]) (get-in backup [:metadata :labels :service]))})
 
 (def fsm-backup
   {:init {:action-stack [::load-pg-instances
-                         {::u/fn ::ut/cluster-active?
-                          ::ut/success-message "Starting backup loop"}]
+                         {::u/fn ::ut/cluster-active?}
+                         {::u/fn ::ut/success}]
           :success :wait-for-new-backup
           :error :error-state}
    :wait-for-new-backup {:action-stack [::backup-enable?
@@ -72,11 +71,12 @@
                          :success :schedule-backup
                          :error :wait-for-new-backup}
    :schedule-backup {:action-stack [::schedule-backup]
-                 :success :waiting-backup-finish
-                 :error :schedule-backup}
+                     :success :waiting-backup-finish
+                     :error :schedule-backup}
    :waiting-backup-finish {:action-stack [::load-pod
                                           ::check-status
-                                          ::delete-pod]
+                                          ::delete-pod
+                                          ::backup-completed]
                            :success :wait-for-new-backup
                            :error :wait-for-new-backup}
    :error-state {}})

@@ -23,8 +23,7 @@
         wals-v (pvc-patch (model/instance-wals-volume-spec inst))]
     (if (every? pvc? [data-v wals-v])
       {::u/status :success
-       :volumes [data-v wals-v]
-       ::u/message "Instance volumes requested"}
+       :volumes [data-v wals-v]}
       {::u/status :error
        ::u/message (str "Instance volumes request error: " data-v wals-v)})))
 
@@ -39,9 +38,8 @@
                     (println "PVC STATUS:" (get-in pvc [:status :phase]))
                     (and acc (= "Bound" (get-in pvc [:status :phase])))))
                 true vols)]
-    (when ready?
-      {::u/status :success
-       ::u/message "Instance volumes ready"})))
+    (when-not ready?
+      {::u/status :stop})))
 
 (defn find-resource [kind ns res-name]
   (k8s/find {:kind kind
@@ -65,7 +63,6 @@
   (let [role (instance-role instance)]
     (if-let [pod (find-init-pod instance init-pod-fn)]
       {::u/status :success
-       ::u/message (str role " already exists")
        :initPod (get-in pod [:metadata :name])}
       (let [pod (init-pod-fn instance)
             res (k8s/create pod)]
@@ -73,7 +70,7 @@
           {::u/status :error
            ::u/message (str res)}
           {::u/status :success
-           ::u/message (str role " initialize started")
+           ::u/message (str "Starting initialization as " role "...")
            :status-data {:initPod (get-in pod [:metadata :name])}})))))
 
 (defmethod u/*fn ::instance-inited? [{inst :resource
@@ -83,15 +80,19 @@
         role (instance-role inst)]
     (cond
       (= "Succeeded" phase)
-      {::u/status :success
-       ::u/message (str role " ready to start")}
+      {}
 
       (#{"Pending" "Running"} phase)
-      {}
+      {::u/status :stop}
 
       :else
       {::u/status :error
        ::u/message (str role " init fail: " (get-in pod [:metadata :name]))})))
+
+(defmethod u/*fn ::instance-initialization-completed  [{inst :resource}]
+  (let [role (instance-role inst)]
+    {::u/status :success
+     ::u/message (str "Instance was initialized as " role)}))
 
 (defmethod u/*fn ::start-instance [{inst :resource}]
   (let [role (instance-role inst)
@@ -99,8 +100,7 @@
     (if (= (:kind res) "Status")
       {::u/status :error
        ::u/message (str res)}
-      {::u/status :success
-       ::u/message (str role " starting")})))
+      {::u/status :success})))
 
 (defmethod u/*fn ::instance-started? [{inst :resource}]
   (let [deployment (k8s/find (model/postgres-deployment inst))]
@@ -116,18 +116,22 @@
       {::u/status :error
        ::u/message (str res)}
       {::u/status :success
-       ::u/message (format "%s service created. %s started" role role)})))
+       ::u/message (str "Service for " role " was created")})))
 
 (def fsm-base
-  {:init {:action-stack [::init-instance-volumes]
-          :success :waiting-volumes
-          :error :error-state}
+  {:init {:action-stack [{::u/fn ::ut/success
+                          ::ut/message "Starting initialization..."}]
+          :success :start-init}
+   :start-init {:action-stack [::init-instance-volumes]
+                :success :waiting-volumes
+                :error :error-state}
 
-   :waiting-volumes {:action-stack [::volumes-ready?]
+   :waiting-volumes {:action-stack [::volumes-ready?
+                                    {::u/fn ::ut/success
+                                     ::ut/message "Volumes are ready"}]
                      :success :waiting-init
                      :error :error-state}
 
-   ;; TODO: make error handling
    :error-state {}})
 
 (def fsm-master
@@ -139,7 +143,8 @@
                    :error :error-state}
 
     :waiting-master-init-pod {:action-stack [{::u/fn ::instance-inited?
-                                              ::init-pod-fn model/init-master-pod}]
+                                              ::init-pod-fn model/init-master-pod}
+                                             ::instance-initialization-completed]
                               :success :master-ready-to-start
                               :error :error-state}
 
@@ -164,16 +169,16 @@
                 (ut/pginstances (get-in cluster [:metadata :namespace]) (naming/service-name (naming/resource-name cluster))))]
     {::master master}))
 
-(defmethod u/*fn ::wait-master [{master ::master}]
-  (when (= (get-in master [:status :phase]) "active")
-    {::u/status :success
-     ::u/message "Master was started"}))
+(defmethod u/*fn ::master-ready? [{master ::master}]
+  (when-not (= (get-in master [:status :phase]) "active")
+    {::u/status :stop}))
 
 (def fsm-replica
   (merge
    fsm-base
    {:waiting-init {:action-stack [::find-master-instance
-                                  ::wait-master]
+                                  ::master-ready?
+                                  {::u/fn ::ut/success}]
                    :success :init-replica-instance
                    :error :error-state}
     :init-replica-instance {:action-stack [{::u/fn ::init-instance
@@ -181,7 +186,8 @@
                             :success :waiting-replica-init
                             :error :error-state}
     :waiting-replica-init {:action-stack [{::u/fn ::instance-inited?
-                                           ::init-pod-fn model/init-replica-pod}]
+                                           ::init-pod-fn model/init-replica-pod}
+                                          ::instance-initialization-completed]
                            :success :replica-ready-to-start
                            :error :error-state}
     :replica-ready-to-start {:action-stack [::start-instance]

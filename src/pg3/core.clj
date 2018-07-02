@@ -37,7 +37,7 @@
                    (watch)
                    (Thread/sleep 10000))
                  (catch java.lang.InterruptedException e
-                   (println "Bay, bay")))))]
+                   (println "Bye, bye")))))]
     (reset! server thr)
     (.start thr)))
 

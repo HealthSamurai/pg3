@@ -16,14 +16,16 @@
     {:master (find-pginstance-by-role pginstances "master")
      :replica (find-pginstance-by-role pginstances "replica")}))
 
-(defmethod u/*fn ::cluster-active? [{pginstances ::pginstances
-                                     success-message ::success-message}]
+(defmethod u/*fn ::cluster-active? [{pginstances ::pginstances}]
   (let [{master :master replica :replica} pginstances]
-    (when (= (get-in master [:status :phase])
+    (when-not (= (get-in master [:status :phase])
              (get-in replica [:status :phase])
              "active")
-      {::u/status :success
-       ::u/message success-message})))
+      {::u/status :stop})))
+
+(defmethod u/*fn ::success [{message ::message}]
+  {::u/status :success
+   ::u/message message})
 
 (defn read-int [s]
   (Integer/parseInt (str/trim s)))

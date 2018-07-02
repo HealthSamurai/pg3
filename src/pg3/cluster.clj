@@ -52,10 +52,6 @@
         instance (or instance (model/instance-spec cluster color (name role)))]
     (strict-patch instance)))
 
-(defmethod u/*fn ::finish-init [arg]
-  {::u/status :success
-   ::u/message "Cluster initialized"})
-
 (defn load-pods [cluster]
   (let [ns (get-in cluster [:metadata :namespace])
         service-name (naming/service-name (naming/resource-name cluster))
@@ -138,19 +134,23 @@
    ::u/status :success})
 
 (def fsm-main
-  {:init {:action-stack [::ensure-cluster-config
-                         ::ensure-cluster-secret
-                         ::ensure-cluster-backup
-                         ::load-pg-instances
-                         ::load-random-colors
-                         {::u/fn ::ensure-instance ::role :master}
-                         {::u/fn ::ensure-instance ::role :replica}
-                         ::finish-init]
-          :success :waiting-initialization
-          :error :error-state}
+  {:init {:action-stack [{::u/fn ::ut/success
+                          ::ut/message "Starting initialization..."}]
+          :success :start-init}
+   :start-init {:action-stack [::ensure-cluster-config
+                               ::ensure-cluster-secret
+                               ::ensure-cluster-backup
+                               ::load-pg-instances
+                               ::load-random-colors
+                               {::u/fn ::ensure-instance ::role :master}
+                               {::u/fn ::ensure-instance ::role :replica}
+                               {::u/fn ::ut/success}]
+                :success :waiting-initialization
+                :error :error-state}
    :waiting-initialization {:action-stack [::load-pg-instances
-                                           {::u/fn ::ut/cluster-active?
-                                            ::ut/success-message "Cluster is active"}]
+                                           {::u/fn ::ut/cluster-active?}
+                                           {::u/fn ::ut/success
+                                            ::ut/message "Cluster was successfully initialized. Starting monitoring..."}]
                             :success :monitoring
                             :error :error-state}
    :monitoring {:action-stack [::load-pods
@@ -161,8 +161,7 @@
                                {::u/fn ::pod-running? ::role :replica}
                                {::u/fn ::check-instance-disk}
                                {::u/fn ::check-postgres}
-                               ::calculate-monitoring-result
-                               #_::check-replication]
+                               ::calculate-monitoring-result]
                 :success :monitoring
                 :error :monitoring-error}
    :monitoring-error {:action-stack [::set-monitoring-error-flag]
