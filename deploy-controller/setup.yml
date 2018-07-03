@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: pg3-controller
-        image: healthsamurai/pg3:0.0.1
+        image: healthsamurai/pg3:latest
         env:
         - name: KUBE_TOKEN
           valueFrom:

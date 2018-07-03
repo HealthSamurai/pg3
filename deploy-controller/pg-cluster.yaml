@@ -3,14 +3,28 @@ ns: pg3
 apiVersion: pg3.io/v1
 metadata:
   name: han-solo
+  namespace: pg3
   labels:
     service: star-wars
     system: pg3
 spec:
   image: aidbox/db:passive-latest
+  wal-export:
+    image: healthsamurai/wal-export:latest
   size: 1Gi
   replicas:
     sync: 1
+backup:
+  - period: 3h
+    name: sql
+    pod-spec:
+      image: healthsamurai/backup-pg3:latest
+      args: ["sql"]
+  - period: 3h
+    name: base
+    pod-spec:
+      image: healthsamurai/backup-pg3:latest
+      args: ["base"]
 config:
   config:
     shared_buffers: 1GB
