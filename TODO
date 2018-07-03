@@ -1,5 +1,4 @@
 ## MEDIUM
-* Refactor and rethink wal-export-pg3. Move source code into backup-pg3.
 * Pluggable monitoring
 * Pluggable notification
 * Initialize replica from WAL files first

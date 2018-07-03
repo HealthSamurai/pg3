@@ -64,11 +64,10 @@
       :kind "Pod"
       :metadata {:namespace (inherited-namespace cluster)
                  :labels (naming/cluster-labels cluster)}
-      :spec {:containers [(u/deep-merge
+      :spec {:containers [(merge
+                           {:image "healthsamurai/backup-pg3:latest"}
                            (:pod-spec spec)
                            {:name "backup"
-                            ;; TODO: why it overrides :pod-spec ???
-                            :image "healthsamurai/backup-pg3:latest"
                             :env
                             [{:name "PG_USER" :value "postgres"}
                              {:name "PG_HOST" :value (naming/service-name (naming/resource-name cluster))}
@@ -308,6 +307,7 @@ host  replication postgres 0.0.0.0/0 md5
                                           "-" (get-in inst-spec [:metadata :labels :color]))})
                 (update-in [:spec :containers]
                            conj (merge
+                                 {:image "healthsamurai/wal-export:latest"}
                                  (get-in inst-spec [:spec :wal-export])
                                  {:name "pg-wal-export"
                                   :imagePullPolicy :Always

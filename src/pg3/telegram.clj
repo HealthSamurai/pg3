@@ -25,7 +25,7 @@
 (defn make-error-message [phase text res]
   (let [kind (:kind res)
         res-name (get-in res [:metadata :name])]
-    (format "Resource *%s*:*%s* failed phase with *%s*%s"
+    (format "Resource *%s*:*%s* failed phase *%s* with %s"
             kind res-name phase
             (if text (prepare-text text) ""))))
 
