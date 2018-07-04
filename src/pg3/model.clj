@@ -301,18 +301,30 @@ host  replication postgres 0.0.0.0/0 md5
                           (format "postgres --config-file=%1$s/postgresql.conf --hba-file=%1$s/pg_hba.conf"
                                   naming/config-path)]})))
 
+(defn with-monitoring? [inst-spec]
+  (get-in inst-spec [:spec :monitoring]))
+
+(defn monitoring-container [inst-spec]
+  {:name "monitoring-agent"
+   :image (get-in inst-spec [:spec :monitoring :image])
+   :ports [{:containerPort (get-in inst-spec [:spec :monitoring :port])}]
+   :imagePullPolicy :Always})
+
 (defn postgres-deployment [inst-spec]
-  (let [pod (-> (postgres-pod inst-spec
-                              {:name (str "pg3-" (get-in inst-spec [:spec :pg-cluster])
-                                          "-" (get-in inst-spec [:metadata :labels :color]))})
-                (update-in [:spec :containers]
-                           conj (merge
-                                 {:image "healthsamurai/wal-export:latest"}
-                                 (get-in inst-spec [:spec :wal-export])
-                                 {:name "pg-wal-export"
-                                  :imagePullPolicy :Always
-                                  :env [{:name "WAL_DIR" :value naming/wals-path}]
-                                  :volumeMounts (volume-mounts inst-spec)})))]
+  (let [pod (cond-> (postgres-pod inst-spec
+                                  {:name (str "pg3-" (get-in inst-spec [:spec :pg-cluster])
+                                              "-" (get-in inst-spec [:metadata :labels :color]))})
+              true (update-in [:spec :containers]
+                              conj (merge
+                                    {:image "healthsamurai/wal-export:latest"}
+                                    (get-in inst-spec [:spec :wal-export])
+                                    {:name "pg-wal-export"
+                                     :imagePullPolicy :Always
+                                     :env [{:name "WAL_DIR" :value naming/wals-path}]
+                                     :volumeMounts (volume-mounts inst-spec)}))
+              (with-monitoring? inst-spec) (update-in [:spec :containers]
+                                                      conj
+                                                      (monitoring-container inst-spec)))]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
      :metadata (:metadata pod)
