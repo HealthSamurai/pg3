@@ -53,7 +53,8 @@
                              (naming/instance-labels role color))}
    :spec (merge (:spec cluster)
                 {:pg-cluster (naming/resource-name cluster)
-                 :role role})
+                 :role role}
+                {:monitoring (get-in cluster [:spec :monitoring])})
    :config (:config cluster)})
 
 (defn full-backup-spec [cluster spec]
@@ -307,6 +308,7 @@ host  replication postgres 0.0.0.0/0 md5
 (defn monitoring-container [inst-spec]
   {:name "monitoring-agent"
    :image (get-in inst-spec [:spec :monitoring :image])
+   ;; todo: make port optional
    :ports [{:containerPort (get-in inst-spec [:spec :monitoring :port])}]
    :imagePullPolicy :Always})
 
