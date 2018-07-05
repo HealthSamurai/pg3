@@ -164,11 +164,11 @@
    :monitoring {:action-stack [::load-pods
                                {::u/fn ::pod-running? ::role :master}
                                {::u/fn ::check-instance-disk}
-                               {::u/fn ::check-postgres}
+                               #_{::u/fn ::check-postgres}
                                {::u/fn ::check-replication-status}
                                {::u/fn ::pod-running? ::role :replica}
                                {::u/fn ::check-instance-disk}
-                               {::u/fn ::check-postgres}
+                               #_{::u/fn ::check-postgres}
                                ::calculate-monitoring-result]
                 :success :monitoring
                 :error :monitoring-error}

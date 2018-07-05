@@ -260,7 +260,10 @@ host  replication postgres 0.0.0.0/0 md5
                                              {:name (naming/secret-name (get-in inst-spec [:spec :pg-cluster]))
                                               :key "password"}}}]
             :command (:command opts)
-            :volumeMounts (volume-mounts inst-spec)}]}})
+            :volumeMounts (volume-mounts inst-spec)
+            :readinessProbe {:exec {:command ["psql" "-c" "select 1;" "-U" "postgres"]}
+                             :initialDelaySeconds 5
+                             :periodSeconds 5}}]}})
 
 (defn init-master-pod [inst-spec]
   (db-pod
