@@ -23,7 +23,7 @@
         wals-v (pvc-patch (model/instance-wals-volume-spec inst))]
     (if (every? pvc? [data-v wals-v])
       {::u/status :success
-       :volumes [data-v wals-v]}
+       :status-data {:volumes [data-v wals-v]}}
       {::u/status :error
        ::u/message (str "Instance volumes request error: " data-v wals-v)})))
 
