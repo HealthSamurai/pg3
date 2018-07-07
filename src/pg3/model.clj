@@ -44,6 +44,11 @@
 (defn inherited-labels [x]
   (or (get-in x [:metadata :labels]) {}))
 
+(defn replication-spec [role]
+  (if (= role "master")
+    {:slots ["pg3_some_slot"]}
+    {:upstream {:slot "pg3_some_slot"}}))
+
 (defn instance-spec [cluster color role]
   {:kind naming/instance-resource-kind
    :apiVersion naming/api
@@ -53,6 +58,7 @@
                              (naming/instance-labels role color))}
    :spec (merge (:spec cluster)
                 {:pg-cluster (naming/resource-name cluster)
+                 :replication (replication-spec role)
                  :role role}
                 {:monitoring (get-in cluster [:spec :monitoring])})
    :config (:config cluster)})
@@ -190,6 +196,39 @@ host  replication postgres 0.0.0.0/0 md5
              "echo stop"
              (str "pg_ctl stop -w -D " naming/data-path)]))
 
+(defn ensure-replication-slots []
+  "#!/bin/sh
+  set -x
+
+  echo ensure replication slots
+
+  CURRENT_SLOTS=`psql -U postgres -qtAX -c 'select slot_name from pg_replication_slots;'`
+  DESIRED_SLOTS=$@
+
+  echo CURRENT_SLOTS=$CURRENT_SLOTS
+  echo DESIRED_SLOTS=$DESIRED_SLOTS
+
+  for current_slot in $CURRENT_SLOTS
+  do
+    if [[ -z $(echo $DESIRED_SLOTS | grep $current_slot) ]]
+    then
+      psql -U postgres -c \"select pg_drop_replication_slot('$current_slot');\"
+    else
+      echo $current_slot is desired
+    fi
+  done
+
+  for desired_slot in $DESIRED_SLOTS
+  do
+    if [[ -z $(echo $CURRENT_SLOTS | grep $desired_slot) ]]
+    then
+      psql -U postgres -c \"select pg_create_physical_replication_slot('$desired_slot');\"
+    else
+      echo $desired_slot already exists
+    fi
+  done
+  ")
+
 (defn config-map [cluster]
   {:kind "ConfigMap"
    :apiVersion "v1"
@@ -198,7 +237,8 @@ host  replication postgres 0.0.0.0/0 md5
               :namespace (inherited-namespace cluster)}
    :data {"postgresql.conf" (pg-config cluster)
           "pg_hba.conf" (pg-hba cluster)
-          "initscript" (init-script cluster)}})
+          "initscript" (init-script cluster)
+          "ensure-replication-slots.sh" (ensure-replication-slots)}})
 
 (defn rand-str [len]
   (apply str (take len (repeatedly #(char (+ (rand 26) 65))))))
@@ -280,9 +320,9 @@ host  replication postgres 0.0.0.0/0 md5
    (str/join " && "
              [(format "rm -rf %s/*" naming/data-path)
               (format "echo '%s:5432:*:$PGUSER:$PGPASSWORD' >> ~/.pgpass" host)
-              (format "psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
+              ; (format "psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
               (format "pg_basebackup -D %s -Fp -h %s -U $PGUSER -w -R -Xs -c fast -l %s -P -v" naming/data-path host color)
-              (format "echo \"primary_slot_name = '%s'\" >> %s/recovery.conf" color naming/data-path)
+              (format "echo \"primary_slot_name = 'pg3_some_slot'\" >> %s/recovery.conf" naming/data-path)
               (format "echo \"standby_mode = 'on'\" >> %s/recovery.conf" naming/data-path)
               (format "chown postgres -R %s" naming/data-path)
               (format "chown postgres -R %s" naming/wals-path)
