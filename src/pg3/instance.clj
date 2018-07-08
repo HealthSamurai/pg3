@@ -130,16 +130,6 @@
            :items
            first)}))
 
-  ;  (when pod
-  ;   (let [cmd {:executable "psql"
-  ;              :args ["-qtAX" "-c" "select count(*) from pg_stat_replication;"]}
-  ;         {status :status message :message} (k8s/exec pod cmd "pg")
-  ;         role (str/capitalize (get-in pod [:metadata :labels :role]))]
-  ;     (cond (and (= status :succeed) (< (ut/read-int message) 1))
-  ;           {::errors (conj errors (format "%s • There is no any alive replica" role))}
-  ;           (= status :failure)
-  ;           {::errors (conj errors (format "%s • %s" role message))}))))
-
 (defmethod u/*fn ::ensure-replication-slots [{pod :pod inst :resource}]
   (let [slots (-> inst :spec :replication :slots)
         script (format "%s/ensure-replication-slots.sh" naming/config-path)
@@ -240,14 +230,4 @@
 
 
 (comment
-
-  (watch)
-
-
-  (def wow (->
-            (k8s/query {:apiVersion "v1"
-                        :kind "Pod"
-                        :ns "pg3"}
-                       {:labelSelector (format "service=%s,type=instance,color=%s" "pg3-han-solo" "lightsalmon")}) :items first))
-
-  )
+  (watch))

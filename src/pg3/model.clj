@@ -198,36 +198,36 @@ host  replication postgres 0.0.0.0/0 md5
 
 (defn ensure-replication-slots []
   "#!/bin/sh
-  set -x
+set -x
 
-  echo ensure replication slots
+echo ensure replication slots
 
-  CURRENT_SLOTS=`psql -U postgres -qtAX -c 'select slot_name from pg_replication_slots;'`
-  DESIRED_SLOTS=$@
+CURRENT_SLOTS=`psql -U postgres -qtAX -c 'select slot_name from pg_replication_slots;'`
+DESIRED_SLOTS=$@
 
-  echo CURRENT_SLOTS=$CURRENT_SLOTS
-  echo DESIRED_SLOTS=$DESIRED_SLOTS
+echo CURRENT_SLOTS=$CURRENT_SLOTS
+echo DESIRED_SLOTS=$DESIRED_SLOTS
 
-  for current_slot in $CURRENT_SLOTS
-  do
-    if [[ -z $(echo $DESIRED_SLOTS | grep $current_slot) ]]
-    then
-      psql -U postgres -c \"select pg_drop_replication_slot('$current_slot');\"
-    else
-      echo $current_slot is desired
-    fi
-  done
+for current_slot in $CURRENT_SLOTS
+do
+  if [[ -z $(echo $DESIRED_SLOTS | grep $current_slot) ]]
+  then
+    psql -U postgres -c \"select pg_drop_replication_slot('$current_slot');\"
+  else
+    echo $current_slot is desired
+  fi
+done
 
-  for desired_slot in $DESIRED_SLOTS
-  do
-    if [[ -z $(echo $CURRENT_SLOTS | grep $desired_slot) ]]
-    then
-      psql -U postgres -c \"select pg_create_physical_replication_slot('$desired_slot');\"
-    else
-      echo $desired_slot already exists
-    fi
-  done
-  ")
+for desired_slot in $DESIRED_SLOTS
+do
+  if [[ -z $(echo $CURRENT_SLOTS | grep $desired_slot) ]]
+  then
+    psql -U postgres -c \"select pg_create_physical_replication_slot('$desired_slot');\"
+  else
+    echo $desired_slot already exists
+  fi
+done
+")
 
 (defn config-map [cluster]
   {:kind "ConfigMap"
