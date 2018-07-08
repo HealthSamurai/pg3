@@ -134,7 +134,7 @@
     :storage (get-in inst-spec [:spec :size])}))
 
 (def preffered-postgresql-config
-  {:synchronous_commit :off
+  {:synchronous_commit :remote_write
    :max_connections 100
    :shared_buffers "1GB"
    :max_replication_slots  30
@@ -145,7 +145,6 @@
 
 (def default-postgresql-config
   {:listen_addresses "*"
-   :synchronous_commit :off
    :wal_log_hints :on
    :port 5432
    :hot_standby :on
@@ -164,12 +163,15 @@
                                      :else v))))
        (str/join "\n")))
 
-(defn pg-config [cluser]
-  (let [cfg (or (get-in cluser [:config :config]) {})]
+(defn pg-config [cluster]
+  (let [cfg (or (get-in cluster [:config :config]) {})
+        sync-replicas (get-in cluster [:spec :replicas :sync] 0)
+        synchronous_standby_names (if (> sync-replicas 0) {:synchronous_standby_names (format "ANY %s (*)" sync-replicas)})]
     (generate-config
      (merge preffered-postgresql-config
             cfg
-            default-postgresql-config))))
+            default-postgresql-config
+            synchronous_standby_names))))
 
 (defn pg-hba [inst-spec]
   "
