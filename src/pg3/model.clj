@@ -313,7 +313,7 @@ done
     :command (initdb-command)}))
 
 
-(defn init-replica-command [host color]
+(defn init-replica-command [host color slot-name]
   ["/bin/sh"
    "-c"
    "-x"
@@ -322,19 +322,20 @@ done
               (format "echo '%s:5432:*:$PGUSER:$PGPASSWORD' >> ~/.pgpass" host)
               ; (format "psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
               (format "pg_basebackup -D %s -Fp -h %s -U $PGUSER -w -R -Xs -c fast -l %s -P -v" naming/data-path host color)
-              (format "echo \"primary_slot_name = 'pg3_some_slot'\" >> %s/recovery.conf" naming/data-path)
+              (format "echo \"primary_slot_name = '%s'\" >> %s/recovery.conf" slot-name naming/data-path)
               (format "echo \"standby_mode = 'on'\" >> %s/recovery.conf" naming/data-path)
               (format "chown postgres -R %s" naming/data-path)
               (format "chown postgres -R %s" naming/wals-path)
               (format "chmod -R 0700 %s" naming/data-path)])])
 
 (defn init-replica-pod [inst-spec]
-  (let [host (str "pg3-" (get-in inst-spec [:spec :pg-cluster]))]
+  (let [host (str "pg3-" (get-in inst-spec [:spec :pg-cluster]))
+        slot-name (get-in inst-spec [:spec :replication :upstream :slot])]
     (db-pod
      (assoc-in inst-spec [:metadata :labels :type] "init")
      {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
       :restartPolicy "Never"
-      :command (init-replica-command host (get-in inst-spec [:metadata :labels :color]))})))
+      :command (init-replica-command host (get-in inst-spec [:metadata :labels :color]) slot-name)})))
 
 
 ;; TODO liveness https://github.com/kubernetes/kubernetes/issues/7891
