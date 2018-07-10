@@ -166,7 +166,7 @@
 (defn pg-config [cluster]
   (let [cfg (or (get-in cluster [:config :config]) {})
         sync-replicas (get-in cluster [:spec :replicas :sync] 0)
-        synchronous_standby_names nil #_(if (> sync-replicas 0) {:synchronous_standby_names (format "ANY %s (*)" sync-replicas)})]
+        synchronous_standby_names (if (> sync-replicas 0) {:synchronous_standby_names (format "ANY %s (*)" sync-replicas)})]
     (generate-config
      (merge preffered-postgresql-config
             cfg
@@ -190,13 +190,13 @@ host  replication postgres 0.0.0.0/0 md5
              "set -x"
              (format "initdb --data-checksums -E 'UTF-8' --lc-collate='en_US.UTF-8' --lc-ctype='en_US.UTF-8' -D %s" naming/data-path)
              "echo start "
-             (str "cp " naming/config-path "/postgresql.conf " naming/data-path "/postgresql.conf")
-             (str "cp " naming/config-path "/pg_hba.conf " naming/data-path "/pg_hba.conf")
              (str "pg_ctl start -w -D " naming/data-path)
              "echo $PGPASSWORD"
              "echo \"ALTER USER postgres WITH SUPERUSER PASSWORD '$PGPASSWORD' \" | psql --echo-all postgres"
              "echo stop"
-             (str "pg_ctl stop -w -D " naming/data-path)]))
+             (str "pg_ctl stop -w -D " naming/data-path)
+             (str "cp " naming/config-path "/postgresql.conf " naming/data-path "/postgresql.conf")
+             (str "cp " naming/config-path "/pg_hba.conf " naming/data-path "/pg_hba.conf")]))
 
 (defn ensure-replication-slots []
   "#!/bin/sh
