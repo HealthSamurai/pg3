@@ -166,7 +166,7 @@
 (defn pg-config [cluster]
   (let [cfg (or (get-in cluster [:config :config]) {})
         sync-replicas (get-in cluster [:spec :replicas :sync] 0)
-        synchronous_standby_names (if (> sync-replicas 0) {:synchronous_standby_names (format "ANY %s (*)" sync-replicas)})]
+        synchronous_standby_names nil #_(if (> sync-replicas 0) {:synchronous_standby_names (format "ANY %s (*)" sync-replicas)})]
     (generate-config
      (merge preffered-postgresql-config
             cfg
@@ -354,8 +354,7 @@ done
 (defn monitoring-container [inst-spec]
   {:name "monitoring-agent"
    :image (get-in inst-spec [:spec :monitoring :image])
-   ;; todo: make port optional
-   :ports [{:containerPort (get-in inst-spec [:spec :monitoring :port])}]
+   :volumeMounts (volume-mounts inst-spec)
    :imagePullPolicy :Always})
 
 (defn postgres-deployment [inst-spec]

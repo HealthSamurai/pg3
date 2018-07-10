@@ -11,9 +11,8 @@ spec:
   image: aidbox/db:passive-latest
   wal-export:
     image: healthsamurai/wal-export:latest
-  # monitoring:
-  #   image: some-image
-  #   port: 1000
+  monitoring:
+    image: vganshin/pg3-space-monitor
   size: 1Gi
   replicas:
     sync: 1
