@@ -9,4 +9,9 @@ EXPOSE 8080
 
 COPY --from=builder /app/target/pg3.jar /pg3.jar
 
-CMD java -cp /pg3.jar clojure.main -m pg3.core
+COPY entrypoint /usr/local/bin/
+RUN chmod u+x /usr/local/bin/entrypoint
+
+ENV DOCKER_API_VERSION 1.23
+ENTRYPOINT ["/usr/local/bin/entrypoint"]
+

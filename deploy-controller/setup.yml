@@ -19,16 +19,6 @@ spec:
       - name: pg3-controller
         image: healthsamurai/pg3:latest
         env:
-        - name: KUBE_TOKEN
-          valueFrom:
-            secretKeyRef:
-              key: KUBE_TOKEN
-              name: pg3-controller-secrets
-        - name: KUBE_URL
-          valueFrom:
-            secretKeyRef:
-              key: KUBE_URL
-              name: pg3-controller-secrets
         - name: TELEGRAM_TOKEN
           valueFrom:
             secretKeyRef:

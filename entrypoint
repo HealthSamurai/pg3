@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+
+if [ -f /var/run/secrets/kubernetes.io/serviceaccount/token ]; then
+  echo "export key"
+  export KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+fi
+
+if [ -n "$KUBERNETES_SERVICE_HOST" ]; then
+  export KUBE_URL="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_PORT_443_TCP_PORT"
+fi
+
+java -cp /pg3.jar clojure.main -m pg3.core
