@@ -72,10 +72,6 @@
                 [(keyword (get-in pod [:metadata :labels :role])) pod]))
          (into {}))))
 
-(defmethod u/*fn ::set-monitoring-error-flag [_]
-  {:status-data {:monitoring-failed-with-error true}
-   ::u/status :success})
-
 (def fsm-main
   {:init {:action-stack [{::u/fn ::ut/success
                           ::ut/message "Starting initialization..."}]
@@ -93,14 +89,12 @@
    :waiting-initialization {:action-stack [::load-pg-instances
                                            {::u/fn ::ut/cluster-active?}
                                            {::u/fn ::ut/success
-                                            ::ut/message "Cluster was successfully initialized. Starting monitoring..."}]
-                            :success :monitoring
+                                            ::ut/message "Cluster was successfully initialized. Cluster is active..."}]
+                            :success :active
                             :error :error-state}
-   :monitoring {:action-stack []
-                :success :monitoring
-                :error :monitoring-error}
-   :monitoring-error {:action-stack [::set-monitoring-error-flag]
-                      :success :monitoring}
+   :active {:action-stack []
+                :success :active
+                :error :error-state}
    :error-state {}})
 
 (defn watch []
