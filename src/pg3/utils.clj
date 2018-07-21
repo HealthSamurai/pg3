@@ -4,8 +4,11 @@
             [clojure.string :as str]
             [unifn.core :as u]))
 
+(defn find-pginstances-by-role [instances role]
+  (filter #(= role (get-in % [:spec :role])) instances))
+
 (defn find-pginstance-by-role [instances role]
-  (first (filter #(= role (get-in % [:spec :role])) instances)))
+  (first (find-pginstances-by-role instances role)))
 
 (defn pginstances [namespace service-name]
   (let [pginstances (:items (k8s/query {:kind naming/instance-resource-kind
@@ -14,7 +17,9 @@
                                        {:labelSelector
                                         (format "service in (%s)" service-name)}))]
     {:master (find-pginstance-by-role pginstances "master")
-     :replica (find-pginstance-by-role pginstances "replica")}))
+     :replica (find-pginstance-by-role pginstances "replica")
+     :replicas (find-pginstances-by-role pginstances "replica")
+     :all pginstances}))
 
 (defmethod u/*fn ::cluster-active? [{pginstances ::pginstances}]
   (let [{master :master replica :replica} pginstances]

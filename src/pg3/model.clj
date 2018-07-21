@@ -44,12 +44,15 @@
 (defn inherited-labels [x]
   (or (get-in x [:metadata :labels]) {}))
 
-(defn replication-spec [role]
+(defn replication-spec [role color slots]
   (if (= role "master")
-    {:slots ["pg3_some_slot"]}
-    {:upstream {:slot "pg3_some_slot"}}))
+    {:slots slots}
+    {:upstream {:slot color}}))
 
-(defn instance-spec [cluster color role]
+(defn instance-spec
+  ([cluster color role]
+    (instance-spec cluster color role {}))
+  ([cluster color role opts]
   {:kind naming/instance-resource-kind
    :apiVersion naming/api
    :metadata {:name (naming/instance-name cluster color)
@@ -58,10 +61,10 @@
                              (naming/instance-labels role color))}
    :spec (merge (:spec cluster)
                 {:pg-cluster (naming/resource-name cluster)
-                 :replication (replication-spec role)
+                 :replication (replication-spec role color (:slots opts))
                  :role role}
                 {:monitoring (get-in cluster [:spec :monitoring])})
-   :config (:config cluster)})
+   :config (:config cluster)}))
 
 (defn full-backup-spec [cluster spec]
   (when spec

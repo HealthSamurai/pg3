@@ -54,6 +54,23 @@
              arg)
    ::backup-item))
 
+(defmethod u/*fn ::ensure-pg-instances [{cluster :resource pg-instances ::ut/pginstances}]
+  (let [all-pg-instances (:all pg-instances)
+        master (:master pg-instances)
+        replicas (:replicas pg-instances)
+        desired-sync-replica-count (get-in cluster [:spec :replicas :sync] 0)
+        desired-async-replica-count (get-in cluster [:spec :replicas :async] 0)
+        desired-replica-count (+ desired-sync-replica-count desired-async-replica-count)
+        lack-replica-count (- desired-replica-count (count replicas))
+        odd-replica-count (- lack-replica-count)
+        reserved-colors (mapv #(get-in % [:metadata :labels :color]) all-pg-instances)
+        free-colors (clojure.set/difference (set naming/colors) reserved-colors)
+        colors (take lack-replica-count free-colors)]
+    (if-not master
+      (strict-patch (model/instance-spec cluster "master" "master" {:slots (apply conj reserved-colors colors)}))) ;; fixme: use color too
+    (if (> odd-replica-count 0) nil) ;; fixme: delete odd pg-instances
+    (doall (map #(strict-patch (model/instance-spec cluster % "replica")) colors))))
+
 (defmethod u/*fn ::ensure-instance [{role ::role cluster :resource :as arg}]
   (let [instance (get-in arg [::ut/pginstances role])
         color (get-in arg [::colors role])
@@ -80,9 +97,7 @@
                                ::ensure-cluster-secret
                                ::ensure-cluster-backup
                                ::load-pg-instances
-                               ::load-random-colors
-                               {::u/fn ::ensure-instance ::role :master}
-                               {::u/fn ::ensure-instance ::role :replica}
+                               ::ensure-pg-instances
                                {::u/fn ::ut/success}]
                 :success :waiting-initialization
                 :error :error-state}
@@ -92,7 +107,8 @@
                                             ::ut/message "Cluster was successfully initialized. Cluster is active..."}]
                             :success :active
                             :error :error-state}
-   :active {:action-stack [::ensure-cluster-config]
+   :active {:action-stack [::ensure-cluster-config
+                           ::ensure-pg-instances]
                 :success :active
                 :error :error-state}
    :error-state {}})
