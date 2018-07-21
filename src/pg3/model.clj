@@ -200,7 +200,6 @@ host  replication postgres 0.0.0.0/0 md5
 
 (defn ensure-replication-slots []
   "#!/bin/sh
-set -x
 
 echo ensure replication slots
 
@@ -215,8 +214,6 @@ do
   if [[ -z $(echo $DESIRED_SLOTS | grep $current_slot) ]]
   then
     psql -U postgres -c \"select pg_drop_replication_slot('$current_slot');\"
-  else
-    echo $current_slot is desired
   fi
 done
 
@@ -225,10 +222,18 @@ do
   if [[ -z $(echo $CURRENT_SLOTS | grep $desired_slot) ]]
   then
     psql -U postgres -c \"select pg_create_physical_replication_slot('$desired_slot');\"
-  else
-    echo $desired_slot already exists
   fi
 done
+")
+
+(defn ensure-config []
+  "#!/bin/sh
+if ! `cmp -s /config/postgresql.conf /data/postgresql.conf`
+then
+  echo postgresql.conf updated
+  cp /config/postgresql.conf /data/postgresql.conf
+  su -m postgres -c 'pg_ctl reload'
+fi
 ")
 
 (defn config-map [cluster]
@@ -240,6 +245,7 @@ done
    :data {"postgresql.conf" (pg-config cluster)
           "pg_hba.conf" (pg-hba cluster)
           "initscript" (init-script cluster)
+          "ensure-config.sh" (ensure-config)
           "ensure-replication-slots.sh" (ensure-replication-slots)}})
 
 (defn rand-str [len]
@@ -344,9 +350,7 @@ done
 (defn postgres-pod [inst-spec opts]
   (db-pod
    (assoc-in inst-spec [:metadata :labels :type] "instance")
-   (merge opts {:command ["su" "-m" "postgres" "-c"
-                          (format "postgres --config-file=%1$s/postgresql.conf --hba-file=%1$s/pg_hba.conf"
-                                  naming/config-path)]})))
+   (merge opts {:command ["su" "-m" "postgres" "-c" "postgres"]})))
 
 (defn with-monitoring? [inst-spec]
   (get-in inst-spec [:spec :monitoring]))

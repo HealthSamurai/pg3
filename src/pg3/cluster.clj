@@ -92,7 +92,7 @@
                                             ::ut/message "Cluster was successfully initialized. Cluster is active..."}]
                             :success :active
                             :error :error-state}
-   :active {:action-stack []
+   :active {:action-stack [::ensure-cluster-config]
                 :success :active
                 :error :error-state}
    :error-state {}})

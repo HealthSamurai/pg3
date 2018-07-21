@@ -141,6 +141,17 @@
         (println status)
         (println message)))))
 
+(defmethod u/*fn ::ensure-config [{pod :pod inst :resource}]
+  (let [slots (-> inst :spec :replication :slots)
+        script (format "%s/ensure-config.sh" naming/config-path)
+        cmd {:executable "bash"
+             :args [script]}]
+    (clojure.pprint/pprint cmd)
+    (when pod
+      (let [{status :status message :message} (k8s/exec pod cmd "pg")]
+        (println status)
+        (println message)))))
+
 (def fsm-base
   {:init {:action-stack [{::u/fn ::ut/success
                           ::ut/message "Initializing volumes..."}]
@@ -155,7 +166,8 @@
                      :success :waiting-init
                      :error :error-state}
    :active {:action-stack [::load-instance-pod
-                           ::ensure-replication-slots]
+                           ::ensure-replication-slots
+                           ::ensure-config]
             :success :active
             :error :active}
    :error-state {}})
