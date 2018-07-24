@@ -15,7 +15,8 @@
    :spec {:group naming/api-group
           :version naming/api-version
           :names {:kind naming/cluster-resource-kind
-                  :plural naming/cluster-resource-plural}
+                  :plural naming/cluster-resource-plural
+                  :shortNames ["pgc"]}
           :scope "Namespaced"}})
 
 (def instance-definition
@@ -25,7 +26,8 @@
    :spec {:group naming/api-group
           :version naming/api-version
           :names {:kind naming/instance-resource-kind
-                  :plural naming/instance-resource-plural}
+                  :plural naming/instance-resource-plural
+                  :shortNames ["pgi"]}
           :scope "Namespaced"}})
 
 (def backup-definition
@@ -35,7 +37,8 @@
    :spec {:group naming/api-group
           :version naming/api-version
           :names {:kind naming/backup-resource-kind
-                  :plural naming/backup-resource-plural}
+                  :plural naming/backup-resource-plural
+                  :shortNames ["pgb"]}
           :scope "Namespaced"}})
 
 (defn inherited-namespace [x]
