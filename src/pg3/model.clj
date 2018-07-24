@@ -47,6 +47,13 @@
 (defn inherited-labels [x]
   (or (get-in x [:metadata :labels]) {}))
 
+(defn owner-references [resource]
+  [{:apiVersion (:apiVersion resource)
+    :kind (:kind resource)
+    :name (get-in resource [:metadata :name])
+    :uid (get-in resource [:metadata :uid])
+    :blockOwnerDeletion true}])
+
 (defn replication-spec [role color slots]
   (if (= role "master")
     {:slots slots}
@@ -60,6 +67,7 @@
    :apiVersion naming/api
    :metadata {:name (naming/instance-name cluster color)
               :namespace (inherited-namespace cluster)
+              :ownerReferences (owner-references cluster)
               :labels (merge (naming/cluster-labels cluster)
                              (naming/instance-labels role color))}
    :spec (merge (:spec cluster)
@@ -76,6 +84,7 @@
      {:apiVersion "v1"
       :kind "Pod"
       :metadata {:namespace (inherited-namespace cluster)
+                 :ownerReferences (owner-references cluster)
                  :labels (naming/cluster-labels cluster)}
       :spec {:containers [(merge
                            {:image "healthsamurai/backup-pg3:latest"}
@@ -96,6 +105,7 @@
    :apiVersion naming/api
    :metadata {:name (naming/backup-name cluster backup)
               :namespace (inherited-namespace cluster)
+              :ownerReferences (owner-references cluster)
               :labels (naming/cluster-labels cluster)}
    :spec (merge (full-backup-spec cluster backup)
                 {:pg-cluster (naming/resource-name cluster)
@@ -111,6 +121,7 @@
 (defn volume-spec
   [{nm :name
     labels :labels
+    owner-refs :ownerReferences
     ns :namespace
     size :storage
     anns :annotations}]
@@ -119,6 +130,7 @@
    :metadata {:name nm
               :lables labels
               :namespace ns
+              :ownerReferences owner-refs
               :annotations  (merge default-volume-annotiations anns)}
    :spec {:accessModes ["ReadWriteOnce"]
           :resources {:requests {:storage size}}}})
@@ -126,6 +138,7 @@
 (defn instance-data-volume-spec [inst-spec]
   (volume-spec
    {:name (naming/data-volume-name inst-spec)
+    :ownerReferences (owner-references inst-spec)
     :labels (merge (inherited-labels inst-spec) {:type "data"})
     :namespace (inherited-namespace inst-spec)
     :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
@@ -135,6 +148,7 @@
   (volume-spec
    {:name (naming/wals-volume-name inst-spec)
     :labels (merge (inherited-labels inst-spec) {:type "wal"})
+    :ownerReferences (owner-references inst-spec)
     :namespace (inherited-namespace inst-spec)
     :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
     :storage (get-in inst-spec [:spec :size])}))
@@ -247,6 +261,7 @@ fi
    :apiVersion "v1"
    :metadata {:name (naming/config-map-name (get-in cluster [:metadata :name]))
               :labels (inherited-labels cluster)
+              :ownerReferences (owner-references cluster)
               :namespace (inherited-namespace cluster)}
    :data {"postgresql.conf" (pg-config cluster)
           "pg_hba.conf" (pg-hba cluster)
@@ -263,6 +278,7 @@ fi
    :type "Opaque"
    :metadata {:name (naming/secret-name (get-in cluster [:metadata :name]))
               :labels (inherited-labels cluster)
+              :ownerReferences (owner-references cluster)
               :namespace (inherited-namespace cluster)}
    :data {:username (k8s/base64-encode "postgres")
           :password (k8s/base64-encode (or pass (rand-str 10)))}})
@@ -300,6 +316,7 @@ fi
    :apiVersion "v1"
    :metadata {:name (:name opts)
               :namespace (inherited-namespace inst-spec)
+              :ownerReferences (owner-references inst-spec)
               :labels (inherited-labels inst-spec)}
    :spec {:restartPolicy (or (:restartPolicy opts) "Always")
           :volumes (volumes inst-spec)
@@ -394,6 +411,7 @@ fi
      :kind "Service"
      :metadata {:name (naming/service-name cluster-name)
                 :namespace (inherited-namespace inst-spec)
+                :ownerReferences (owner-references inst-spec)
                 :labels (inherited-labels inst-spec)}
      :spec {:selector (naming/master-service-selector cluster-name) 
             :type "ClusterIP"
@@ -408,6 +426,7 @@ fi
      :kind "Service"
      :metadata {:name (naming/replica-service-name inst-spec)
                 :namespace (inherited-namespace inst-spec)
+                :ownerReferences (owner-references inst-spec)
                 :labels  (inherited-labels inst-spec)}
      :spec {:selector (naming/replica-service-selector cluster-name clr)
             :type "ClusterIP"
