@@ -17,15 +17,13 @@
                                        {:labelSelector
                                         (format "service in (%s)" service-name)}))]
     {:master (find-pginstance-by-role pginstances "master")
-     :replica (find-pginstance-by-role pginstances "replica")
      :replicas (find-pginstances-by-role pginstances "replica")
      :all pginstances}))
 
 (defmethod u/*fn ::cluster-active? [{pginstances ::pginstances}]
-  (let [{master :master replica :replica} pginstances]
-    (when-not (= (get-in master [:status :phase])
-             (get-in replica [:status :phase])
-             "active")
+  (let [{all-pgi :all} pginstances
+        phases (mapv #(get-in % [:status :phase]) all-pgi)]
+    (when-not (apply = (conj phases "active"))
       {::u/status :stop})))
 
 (defmethod u/*fn ::success [{message ::message}]

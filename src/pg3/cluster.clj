@@ -18,11 +18,6 @@
 (defmethod u/*fn ::load-pg-instances [{cluster :resource}]
   {::ut/pginstances (ut/pginstances (get-in cluster [:metadata :namespace]) (naming/service-name (naming/resource-name cluster)))})
 
-(defmethod u/*fn ::load-random-colors [arg]
-  (let [colors (take 2 (shuffle naming/colors))]
-    {::colors {:master (first colors)
-               :replica (second colors)}}))
-
 #_(defmethod u/*fn :k8s/patch [{path :k8s/path :as arg}]
     (let [result (k8s/patch (get-in arg path))]
       (when (= (:kind result) "Status")
