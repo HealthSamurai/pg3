@@ -56,7 +56,7 @@
                                   :id "pg3-perseus"}) [:spec :pod-spec :spec :containers 0 :args] ["sql"]))
 
   (clojure.pprint/pprint
-   (k8s/find (model/postgres-deployment (:replica (ut/my-pginstances perseus-cluster))))
+   (k8s/find (model/postgres-deployment (first (:replicas (ut/my-pginstances perseus-cluster)))))
    )
 
   (first (:items (k8s/query {:apiVersion "v1"

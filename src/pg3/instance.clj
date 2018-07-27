@@ -118,6 +118,40 @@
       {::u/status :success
        ::u/message (str "Service for " role " was created")})))
 
+(defmethod u/*fn ::load-instance-pod [{inst :resource}]
+  #_(clojure.pprint/pprint inst)
+  (let [service (get-in inst [:metadata :labels :service])
+        color (get-in inst [:metadata :labels :color])]
+    {:pod (->
+           (k8s/query {:apiVersion "v1"
+                       :kind "Pod"
+                       :ns "pg3"}
+                      {:labelSelector (format "type=instance,service=%s,color=%s" service color)})
+           :items
+           first)}))
+
+(defmethod u/*fn ::ensure-replication-slots [{pod :pod inst :resource}]
+  (let [slots (-> inst :spec :replication :slots)
+        script (format "%s/ensure-replication-slots.sh" naming/config-path)
+        cmd {:executable "bash"
+             :args (apply conj [script] slots)}]
+    (clojure.pprint/pprint cmd)
+    (when pod
+      (let [{status :status message :message} (k8s/exec pod cmd "pg")]
+        (println status)
+        (println message)))))
+
+(defmethod u/*fn ::ensure-config [{pod :pod inst :resource}]
+  (let [slots (-> inst :spec :replication :slots)
+        script (format "%s/ensure-config.sh" naming/config-path)
+        cmd {:executable "bash"
+             :args [script]}]
+    (clojure.pprint/pprint cmd)
+    (when pod
+      (let [{status :status message :message} (k8s/exec pod cmd "pg")]
+        (println status)
+        (println message)))))
+
 (def fsm-base
   {:init {:action-stack [{::u/fn ::ut/success
                           ::ut/message "Initializing volumes..."}]
@@ -131,7 +165,11 @@
                                      ::ut/message "Volumes are ready"}]
                      :success :waiting-init
                      :error :error-state}
-
+   :active {:action-stack [::load-instance-pod
+                           ::ensure-replication-slots
+                           ::ensure-config]
+            :success :active
+            :error :active}
    :error-state {}})
 
 (def fsm-master
@@ -156,9 +194,7 @@
                                      {::u/fn ::start-instance-service
                                       ::service-fn model/master-service}]
                       :success :active
-                      :error :error-state}
-
-    :active {}}))
+                      :error :error-state}}))
 
 (defmethod u/*fn ::find-master-instance [{replica :resource}]
   (let [cluster-name (get-in replica [:spec :pg-cluster])
@@ -197,8 +233,7 @@
                                       {::u/fn ::start-instance-service
                                        ::service-fn model/replica-service}]
                        :success :active
-                       :error :error-state}
-    :active {}}))
+                       :error :error-state}}))
 
 (defn watch []
   (doseq [inst (:items (k8s/query {:kind naming/instance-resource-kind :apiVersion naming/api}))]
@@ -207,7 +242,4 @@
 
 
 (comment
-
-  (watch)
-
-  )
+  (watch))

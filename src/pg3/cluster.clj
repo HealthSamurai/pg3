@@ -18,11 +18,6 @@
 (defmethod u/*fn ::load-pg-instances [{cluster :resource}]
   {::ut/pginstances (ut/pginstances (get-in cluster [:metadata :namespace]) (naming/service-name (naming/resource-name cluster)))})
 
-(defmethod u/*fn ::load-random-colors [arg]
-  (let [colors (take 2 (shuffle naming/colors))]
-    {::colors {:master (first colors)
-               :replica (second colors)}}))
-
 #_(defmethod u/*fn :k8s/patch [{path :k8s/path :as arg}]
     (let [result (k8s/patch (get-in arg path))]
       (when (= (:kind result) "Status")
@@ -54,6 +49,23 @@
              arg)
    ::backup-item))
 
+(defmethod u/*fn ::ensure-pg-instances [{cluster :resource pg-instances ::ut/pginstances}]
+  (let [all-pg-instances (:all pg-instances)
+        master (:master pg-instances)
+        replicas (:replicas pg-instances)
+        desired-sync-replica-count (get-in cluster [:spec :replicas :sync] 0)
+        desired-async-replica-count (get-in cluster [:spec :replicas :async] 0)
+        desired-replica-count (+ desired-sync-replica-count desired-async-replica-count)
+        lack-replica-count (- desired-replica-count (count replicas))
+        odd-replica-count (- lack-replica-count)
+        reserved-colors (mapv #(get-in % [:metadata :labels :color]) all-pg-instances)
+        free-colors (clojure.set/difference (set naming/colors) reserved-colors)
+        colors (take lack-replica-count free-colors)]
+    (if-not master
+      (strict-patch (model/instance-spec cluster "master" "master" {:slots (apply conj reserved-colors colors)}))) ;; fixme: use color too
+    (if (> odd-replica-count 0) nil) ;; fixme: delete odd pg-instances
+    (doall (map #(strict-patch (model/instance-spec cluster % "replica")) colors))))
+
 (defmethod u/*fn ::ensure-instance [{role ::role cluster :resource :as arg}]
   (let [instance (get-in arg [::ut/pginstances role])
         color (get-in arg [::colors role])
@@ -72,75 +84,6 @@
                 [(keyword (get-in pod [:metadata :labels :role])) pod]))
          (into {}))))
 
-(defmethod u/*fn ::load-pods [{cluster :resource}]
-  {::pods (load-pods cluster)})
-
-(defmethod u/*fn ::pod-running? [{role ::role pods ::pods errors ::errors :or {errors []}}]
-  (let [pod (get pods role)
-        running? (= (get-in pod [:status :phase]) "Running")
-        ok? (ut/resource-ok? pod)]
-    (cond
-      (and running? ok?)
-      {::pod pod}
-
-      (not pod)
-      {::errors (conj errors (str (str/capitalize (name role)) " • Pod does not exists"))}
-
-      :else
-      {::errors (cond-> errors
-                  (not running?) (conj (str (str/capitalize (name role)) " • Pod is not running"))
-                  (not ok?)      (concat (mapv (fn [err]
-                                                 (str (str/capitalize (name role)) " • " err))
-                                               (ut/resource-errors pod))))})))
-
-(defmethod u/*fn ::check-instance-disk [{pod ::pod errors ::errors :or {errors []}}]
-  (when pod
-    (let [cmd {:executable "/bin/bash"
-               :args ["-c" "df -h /data | awk '{print $5}' | grep -oE \\\\d+"]}
-          {status :status message :message} (k8s/exec pod cmd "pg")
-          role (str/capitalize (get-in pod [:metadata :labels :role]))]
-      (cond
-        (and (= status :succeed)
-             (>= (ut/read-int message) 90))
-        {::errors (conj errors (format "%s • Low disk space: %d%%" role (ut/read-int message)))}
-
-        (= status :failure)
-        {::errors (conj errors (format "%s • %s" role message))}))))
-
-(defmethod u/*fn ::check-postgres [{pod ::pod errors ::errors :or {errors []}}]
-  (when pod
-    (let [cmd {:executable "psql"
-               :args ["-c" "select 1;"]}
-          {status :status message :message} (k8s/exec pod cmd "pg")
-          role (str/capitalize (get-in pod [:metadata :labels :role]))]
-      (when (= status :failure)
-        {::errors (conj errors (format "%s • Postgresql not available: %s" role message))}))))
-
-(defmethod u/*fn ::check-replication-status [{pod ::pod errors ::errors :or {errors []}}]
-  (when pod
-    (let [cmd {:executable "psql"
-               :args ["-qtAX" "-c" "select count(*) from pg_stat_replication;"]}
-          {status :status message :message} (k8s/exec pod cmd "pg")
-          role (str/capitalize (get-in pod [:metadata :labels :role]))]
-      (cond (and (= status :succeed) (< (ut/read-int message) 1))
-            {::errors (conj errors (format "%s • There is no any alive replica" role))}
-            (= status :failure)
-            {::errors (conj errors (format "%s • %s" role message))}))))
-
-(defmethod u/*fn ::calculate-monitoring-result
-  [{{{failed-with-error :monitoring-failed-with-error} :status} :resource errors ::errors}]
-  (cond
-    (not (empty? errors)) {::u/status :error
-                           ::u/message (str "\n" (str/join "\n" errors))}
-    failed-with-error {::u/status :success
-                       ::u/message "Cluster recovered after a monitoring error"
-                       :status-data {:monitoring-failed-with-error false}}
-    :else {}))
-
-(defmethod u/*fn ::set-monitoring-error-flag [_]
-  {:status-data {:monitoring-failed-with-error true}
-   ::u/status :success})
-
 (def fsm-main
   {:init {:action-stack [{::u/fn ::ut/success
                           ::ut/message "Starting initialization..."}]
@@ -149,31 +92,20 @@
                                ::ensure-cluster-secret
                                ::ensure-cluster-backup
                                ::load-pg-instances
-                               ::load-random-colors
-                               {::u/fn ::ensure-instance ::role :master}
-                               {::u/fn ::ensure-instance ::role :replica}
+                               ::ensure-pg-instances
                                {::u/fn ::ut/success}]
                 :success :waiting-initialization
                 :error :error-state}
    :waiting-initialization {:action-stack [::load-pg-instances
                                            {::u/fn ::ut/cluster-active?}
                                            {::u/fn ::ut/success
-                                            ::ut/message "Cluster was successfully initialized. Starting monitoring..."}]
-                            :success :monitoring
+                                            ::ut/message "Cluster was successfully initialized. Cluster is active..."}]
+                            :success :active
                             :error :error-state}
-   :monitoring {:action-stack [::load-pods
-                               {::u/fn ::pod-running? ::role :master}
-                               {::u/fn ::check-instance-disk}
-                               {::u/fn ::check-postgres}
-                               {::u/fn ::check-replication-status}
-                               {::u/fn ::pod-running? ::role :replica}
-                               {::u/fn ::check-instance-disk}
-                               {::u/fn ::check-postgres}
-                               ::calculate-monitoring-result]
-                :success :monitoring
-                :error :monitoring-error}
-   :monitoring-error {:action-stack [::set-monitoring-error-flag]
-                      :success :monitoring}
+   :active {:action-stack [::ensure-cluster-config
+                           ::ensure-pg-instances]
+                :success :active
+                :error :error-state}
    :error-state {}})
 
 (defn watch []

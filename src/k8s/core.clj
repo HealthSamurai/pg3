@@ -163,8 +163,9 @@
 (defn patch [nres]
   (let [res (find nres)]
     (if-not (or (number? res) (= "Failure" (get res :status)))
-      (let [diff (patch/diff (walk/stringify-keys res)
-                             (walk/stringify-keys (*merge res nres)))]
+      (let [stringified-res (walk/stringify-keys res)
+            stringified-nres (walk/stringify-keys nres)
+            diff (patch/diff stringified-res (*merge stringified-res stringified-nres))]
         ;; (println "PATCH" diff)
         (->
          @(http-client/patch

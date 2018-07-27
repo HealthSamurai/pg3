@@ -11,9 +11,12 @@ spec:
   image: aidbox/db:passive-latest
   wal-export:
     image: healthsamurai/wal-export:latest
+  monitoring:
+    image: vganshin/pg3-space-monitor
   size: 1Gi
   replicas:
     sync: 1
+    async: 1
 backup:
   - period: 3h
     name: sql

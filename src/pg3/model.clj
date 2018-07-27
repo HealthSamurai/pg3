@@ -15,7 +15,8 @@
    :spec {:group naming/api-group
           :version naming/api-version
           :names {:kind naming/cluster-resource-kind
-                  :plural naming/cluster-resource-plural}
+                  :plural naming/cluster-resource-plural
+                  :shortNames ["pgc"]}
           :scope "Namespaced"}})
 
 (def instance-definition
@@ -25,7 +26,8 @@
    :spec {:group naming/api-group
           :version naming/api-version
           :names {:kind naming/instance-resource-kind
-                  :plural naming/instance-resource-plural}
+                  :plural naming/instance-resource-plural
+                  :shortNames ["pgi"]}
           :scope "Namespaced"}})
 
 (def backup-definition
@@ -35,7 +37,8 @@
    :spec {:group naming/api-group
           :version naming/api-version
           :names {:kind naming/backup-resource-kind
-                  :plural naming/backup-resource-plural}
+                  :plural naming/backup-resource-plural
+                  :shortNames ["pgb"]}
           :scope "Namespaced"}})
 
 (defn inherited-namespace [x]
@@ -44,17 +47,35 @@
 (defn inherited-labels [x]
   (or (get-in x [:metadata :labels]) {}))
 
-(defn instance-spec [cluster color role]
+(defn owner-references [resource]
+  [{:apiVersion (:apiVersion resource)
+    :kind (:kind resource)
+    :name (get-in resource [:metadata :name])
+    :uid (get-in resource [:metadata :uid])
+    :blockOwnerDeletion true}])
+
+(defn replication-spec [role color slots]
+  (if (= role "master")
+    {:slots slots}
+    {:upstream {:slot color}}))
+
+(defn instance-spec
+  ([cluster color role]
+    (instance-spec cluster color role {}))
+  ([cluster color role opts]
   {:kind naming/instance-resource-kind
    :apiVersion naming/api
    :metadata {:name (naming/instance-name cluster color)
               :namespace (inherited-namespace cluster)
+              :ownerReferences (owner-references cluster)
               :labels (merge (naming/cluster-labels cluster)
                              (naming/instance-labels role color))}
    :spec (merge (:spec cluster)
                 {:pg-cluster (naming/resource-name cluster)
-                 :role role})
-   :config (:config cluster)})
+                 :replication (replication-spec role color (:slots opts))
+                 :role role}
+                {:monitoring (get-in cluster [:spec :monitoring])})
+   :config (:config cluster)}))
 
 (defn full-backup-spec [cluster spec]
   (when spec
@@ -63,6 +84,7 @@
      {:apiVersion "v1"
       :kind "Pod"
       :metadata {:namespace (inherited-namespace cluster)
+                 :ownerReferences (owner-references cluster)
                  :labels (naming/cluster-labels cluster)}
       :spec {:containers [(merge
                            {:image "healthsamurai/backup-pg3:latest"}
@@ -83,6 +105,7 @@
    :apiVersion naming/api
    :metadata {:name (naming/backup-name cluster backup)
               :namespace (inherited-namespace cluster)
+              :ownerReferences (owner-references cluster)
               :labels (naming/cluster-labels cluster)}
    :spec (merge (full-backup-spec cluster backup)
                 {:pg-cluster (naming/resource-name cluster)
@@ -98,6 +121,7 @@
 (defn volume-spec
   [{nm :name
     labels :labels
+    owner-refs :ownerReferences
     ns :namespace
     size :storage
     anns :annotations}]
@@ -106,6 +130,7 @@
    :metadata {:name nm
               :lables labels
               :namespace ns
+              :ownerReferences owner-refs
               :annotations  (merge default-volume-annotiations anns)}
    :spec {:accessModes ["ReadWriteOnce"]
           :resources {:requests {:storage size}}}})
@@ -113,6 +138,7 @@
 (defn instance-data-volume-spec [inst-spec]
   (volume-spec
    {:name (naming/data-volume-name inst-spec)
+    :ownerReferences (owner-references inst-spec)
     :labels (merge (inherited-labels inst-spec) {:type "data"})
     :namespace (inherited-namespace inst-spec)
     :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
@@ -122,12 +148,13 @@
   (volume-spec
    {:name (naming/wals-volume-name inst-spec)
     :labels (merge (inherited-labels inst-spec) {:type "wal"})
+    :ownerReferences (owner-references inst-spec)
     :namespace (inherited-namespace inst-spec)
     :annotations {"volume.beta.kubernetes.io/storage-class" (get-in inst-spec [:spec :storageClass] "standard")}
     :storage (get-in inst-spec [:spec :size])}))
 
 (def preffered-postgresql-config
-  {:synchronous_commit :off
+  {:synchronous_commit :remote_write
    :max_connections 100
    :shared_buffers "1GB"
    :max_replication_slots  30
@@ -138,7 +165,6 @@
 
 (def default-postgresql-config
   {:listen_addresses "*"
-   :synchronous_commit :off
    :wal_log_hints :on
    :port 5432
    :hot_standby :on
@@ -157,12 +183,15 @@
                                      :else v))))
        (str/join "\n")))
 
-(defn pg-config [cluser]
-  (let [cfg (or (get-in cluser [:config :config]) {})]
+(defn pg-config [cluster]
+  (let [cfg (or (get-in cluster [:config :config]) {})
+        sync-replicas (get-in cluster [:spec :replicas :sync] 0)
+        synchronous_standby_names (if (> sync-replicas 0) {:synchronous_standby_names (format "ANY %s (*)" sync-replicas)})]
     (generate-config
      (merge preffered-postgresql-config
             cfg
-            default-postgresql-config))))
+            default-postgresql-config
+            synchronous_standby_names))))
 
 (defn pg-hba [inst-spec]
   "
@@ -181,23 +210,64 @@ host  replication postgres 0.0.0.0/0 md5
              "set -x"
              (format "initdb --data-checksums -E 'UTF-8' --lc-collate='en_US.UTF-8' --lc-ctype='en_US.UTF-8' -D %s" naming/data-path)
              "echo start "
-             (str "cp " naming/config-path "/postgresql.conf " naming/data-path "/postgresql.conf")
-             (str "cp " naming/config-path "/pg_hba.conf " naming/data-path "/pg_hba.conf")
              (str "pg_ctl start -w -D " naming/data-path)
              "echo $PGPASSWORD"
              "echo \"ALTER USER postgres WITH SUPERUSER PASSWORD '$PGPASSWORD' \" | psql --echo-all postgres"
              "echo stop"
-             (str "pg_ctl stop -w -D " naming/data-path)]))
+             (str "pg_ctl stop -w -D " naming/data-path)
+             (str "cp " naming/config-path "/postgresql.conf " naming/data-path "/postgresql.conf")
+             (str "cp " naming/config-path "/pg_hba.conf " naming/data-path "/pg_hba.conf")]))
+
+(defn ensure-replication-slots []
+  "#!/bin/sh
+
+echo ensure replication slots
+
+CURRENT_SLOTS=`psql -U postgres -qtAX -c 'select slot_name from pg_replication_slots;'`
+DESIRED_SLOTS=$@
+
+echo CURRENT_SLOTS=$CURRENT_SLOTS
+echo DESIRED_SLOTS=$DESIRED_SLOTS
+
+for current_slot in $CURRENT_SLOTS
+do
+  if [[ -z $(echo $DESIRED_SLOTS | grep $current_slot) ]]
+  then
+    psql -U postgres -c \"select pg_drop_replication_slot('$current_slot');\"
+  fi
+done
+
+for desired_slot in $DESIRED_SLOTS
+do
+  if [[ -z $(echo $CURRENT_SLOTS | grep $desired_slot) ]]
+  then
+    psql -U postgres -c \"select pg_create_physical_replication_slot('$desired_slot');\"
+  fi
+done
+")
+
+(defn ensure-config []
+  "#!/bin/sh
+if ! `cmp -s /config/postgresql.conf /data/postgresql.conf`
+then
+  echo postgresql.conf updated
+  cp /config/postgresql.conf /data/postgresql.conf
+  su -m postgres -c 'pg_ctl reload'
+fi
+")
 
 (defn config-map [cluster]
   {:kind "ConfigMap"
    :apiVersion "v1"
    :metadata {:name (naming/config-map-name (get-in cluster [:metadata :name]))
               :labels (inherited-labels cluster)
+              :ownerReferences (owner-references cluster)
               :namespace (inherited-namespace cluster)}
    :data {"postgresql.conf" (pg-config cluster)
           "pg_hba.conf" (pg-hba cluster)
-          "initscript" (init-script cluster)}})
+          "initscript" (init-script cluster)
+          "ensure-config.sh" (ensure-config)
+          "ensure-replication-slots.sh" (ensure-replication-slots)}})
 
 (defn rand-str [len]
   (apply str (take len (repeatedly #(char (+ (rand 26) 65))))))
@@ -208,6 +278,7 @@ host  replication postgres 0.0.0.0/0 md5
    :type "Opaque"
    :metadata {:name (naming/secret-name (get-in cluster [:metadata :name]))
               :labels (inherited-labels cluster)
+              :ownerReferences (owner-references cluster)
               :namespace (inherited-namespace cluster)}
    :data {:username (k8s/base64-encode "postgres")
           :password (k8s/base64-encode (or pass (rand-str 10)))}})
@@ -245,6 +316,7 @@ host  replication postgres 0.0.0.0/0 md5
    :apiVersion "v1"
    :metadata {:name (:name opts)
               :namespace (inherited-namespace inst-spec)
+              :ownerReferences (owner-references inst-spec)
               :labels (inherited-labels inst-spec)}
    :spec {:restartPolicy (or (:restartPolicy opts) "Always")
           :volumes (volumes inst-spec)
@@ -259,7 +331,10 @@ host  replication postgres 0.0.0.0/0 md5
                                              {:name (naming/secret-name (get-in inst-spec [:spec :pg-cluster]))
                                               :key "password"}}}]
             :command (:command opts)
-            :volumeMounts (volume-mounts inst-spec)}]}})
+            :volumeMounts (volume-mounts inst-spec)
+            :readinessProbe {:exec {:command ["psql" "-c" "select 1;" "-U" "postgres"]}
+                             :initialDelaySeconds 5
+                             :periodSeconds 5}}]}})
 
 (defn init-master-pod [inst-spec]
   (db-pod
@@ -269,50 +344,61 @@ host  replication postgres 0.0.0.0/0 md5
     :command (initdb-command)}))
 
 
-(defn init-replica-command [host color]
+(defn init-replica-command [host color slot-name]
   ["/bin/sh"
    "-c"
    "-x"
    (str/join " && "
              [(format "rm -rf %s/*" naming/data-path)
               (format "echo '%s:5432:*:$PGUSER:$PGPASSWORD' >> ~/.pgpass" host)
-              (format "psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
+              ; (format "psql -h %s -U postgres -c \"SELECT pg_create_physical_replication_slot('%s');\" || echo 'already here' " host color)
               (format "pg_basebackup -D %s -Fp -h %s -U $PGUSER -w -R -Xs -c fast -l %s -P -v" naming/data-path host color)
-              (format "echo \"primary_slot_name = '%s'\" >> %s/recovery.conf" color naming/data-path)
+              (format "echo \"primary_slot_name = '%s'\" >> %s/recovery.conf" slot-name naming/data-path)
               (format "echo \"standby_mode = 'on'\" >> %s/recovery.conf" naming/data-path)
               (format "chown postgres -R %s" naming/data-path)
               (format "chown postgres -R %s" naming/wals-path)
               (format "chmod -R 0700 %s" naming/data-path)])])
 
 (defn init-replica-pod [inst-spec]
-  (let [host (str "pg3-" (get-in inst-spec [:spec :pg-cluster]))]
+  (let [host (str "pg3-" (get-in inst-spec [:spec :pg-cluster]))
+        slot-name (get-in inst-spec [:spec :replication :upstream :slot])]
     (db-pod
      (assoc-in inst-spec [:metadata :labels :type] "init")
      {:name (str (get-in inst-spec [:metadata :name]) "-init-replica")
       :restartPolicy "Never"
-      :command (init-replica-command host (get-in inst-spec [:metadata :labels :color]))})))
+      :command (init-replica-command host (get-in inst-spec [:metadata :labels :color]) slot-name)})))
 
 
 ;; TODO liveness https://github.com/kubernetes/kubernetes/issues/7891
 (defn postgres-pod [inst-spec opts]
   (db-pod
    (assoc-in inst-spec [:metadata :labels :type] "instance")
-   (merge opts {:command ["su" "-m" "postgres" "-c"
-                          (format "postgres --config-file=%1$s/postgresql.conf --hba-file=%1$s/pg_hba.conf"
-                                  naming/config-path)]})))
+   (merge opts {:command ["su" "-m" "postgres" "-c" "postgres"]})))
+
+(defn with-monitoring? [inst-spec]
+  (get-in inst-spec [:spec :monitoring]))
+
+(defn monitoring-container [inst-spec]
+  {:name "monitoring-agent"
+   :image (get-in inst-spec [:spec :monitoring :image])
+   :volumeMounts (volume-mounts inst-spec)
+   :imagePullPolicy :Always})
 
 (defn postgres-deployment [inst-spec]
-  (let [pod (-> (postgres-pod inst-spec
-                              {:name (str "pg3-" (get-in inst-spec [:spec :pg-cluster])
-                                          "-" (get-in inst-spec [:metadata :labels :color]))})
-                (update-in [:spec :containers]
-                           conj (merge
-                                 {:image "healthsamurai/wal-export:latest"}
-                                 (get-in inst-spec [:spec :wal-export])
-                                 {:name "pg-wal-export"
-                                  :imagePullPolicy :Always
-                                  :env [{:name "WAL_DIR" :value naming/wals-path}]
-                                  :volumeMounts (volume-mounts inst-spec)})))]
+  (let [pod (cond-> (postgres-pod inst-spec
+                                  {:name (str "pg3-" (get-in inst-spec [:spec :pg-cluster])
+                                              "-" (get-in inst-spec [:metadata :labels :color]))})
+              true (update-in [:spec :containers]
+                              conj (merge
+                                    {:image "healthsamurai/wal-export:latest"}
+                                    (get-in inst-spec [:spec :wal-export])
+                                    {:name "pg-wal-export"
+                                     :imagePullPolicy :Always
+                                     :env [{:name "WAL_DIR" :value naming/wals-path}]
+                                     :volumeMounts (volume-mounts inst-spec)}))
+              (with-monitoring? inst-spec) (update-in [:spec :containers]
+                                                      conj
+                                                      (monitoring-container inst-spec)))]
     {:apiVersion "apps/v1beta1"
      :kind "Deployment"
      :metadata (:metadata pod)
@@ -325,6 +411,7 @@ host  replication postgres 0.0.0.0/0 md5
      :kind "Service"
      :metadata {:name (naming/service-name cluster-name)
                 :namespace (inherited-namespace inst-spec)
+                :ownerReferences (owner-references inst-spec)
                 :labels (inherited-labels inst-spec)}
      :spec {:selector (naming/master-service-selector cluster-name) 
             :type "ClusterIP"
@@ -339,6 +426,7 @@ host  replication postgres 0.0.0.0/0 md5
      :kind "Service"
      :metadata {:name (naming/replica-service-name inst-spec)
                 :namespace (inherited-namespace inst-spec)
+                :ownerReferences (owner-references inst-spec)
                 :labels  (inherited-labels inst-spec)}
      :spec {:selector (naming/replica-service-selector cluster-name clr)
             :type "ClusterIP"
